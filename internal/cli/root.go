@@ -20,6 +20,7 @@ var (
 	diffRange   string
 	prRef       string
 	charterPath string
+	commitSHA   string
 )
 
 var rootCmd = &cobra.Command{

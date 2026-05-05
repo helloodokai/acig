@@ -36,6 +36,7 @@ func init() {
 	runCmd.Flags().Float64Var(&budgetUSD, "budget", 0, "per-run budget in USD (overrides config)")
 	runCmd.Flags().StringVar(&profile, "profile", "", "profile to use: cloud, local (overrides config)")
 	runCmd.Flags().StringVar(&charterPath, "charter", "", "path to charter.yaml for conformance checking")
+	runCmd.Flags().StringVar(&commitSHA, "sha", "", "commit SHA for check runs (default: auto-detect)")
 
 	rootCmd.AddCommand(runCmd)
 }
@@ -108,7 +109,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 	router := routing.NewRouter(cfg)
 
 	repo := detectRepo()
-	sha := detectSHA()
+	sha := commitSHA
+	if sha == "" {
+		sha = os.Getenv("ACIG_COMMIT_SHA")
+	}
+	if sha == "" {
+		sha = detectSHA()
+	}
 	if baseSHA == "" {
 		baseSHA = detectBaseSHA()
 	}
@@ -124,7 +131,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	slog.Info("verdict", "decision", v.Decision, "risk", v.Risk, "findings", len(v.Findings), "cost_usd", fmt.Sprintf("%.4f", v.TotalCostUSD))
 
 	if shouldReportGitHub() {
-		if err := reportToGitHub(ctx, cfg, v); err != nil {
+		if err := reportToGitHub(ctx, cfg, v, sha); err != nil {
 			slog.Error("github report failed", "error", err)
 		}
 	}
@@ -216,7 +223,7 @@ func shouldReportGitHub() bool {
 		os.Getenv("GITHUB_EVENT_NAME") == "pull_request"
 }
 
-func reportToGitHub(ctx context.Context, cfg *config.Config, v *verdict.Verdict) error {
+func reportToGitHub(ctx context.Context, cfg *config.Config, v *verdict.Verdict, sha string) error {
 	repo := os.Getenv("GITHUB_REPOSITORY")
 	if repo == "" {
 		return fmt.Errorf("GITHUB_REPOSITORY not set")
@@ -233,7 +240,7 @@ func reportToGitHub(ctx context.Context, cfg *config.Config, v *verdict.Verdict)
 	}
 
 	client := githubclient.NewClient(os.Getenv("GITHUB_TOKEN"))
-	reporter := reporters.NewGitHubReporter(client)
+	reporter := reporters.NewGitHubReporter(client, sha)
 	return reporter.Report(ctx, v, owner, name, prNumber)
 }
 

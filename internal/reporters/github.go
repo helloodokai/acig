@@ -14,11 +14,12 @@ import (
 const acigMarker = "<!-- acig:review -->"
 
 type GitHubReporter struct {
-	client *githubclient.Client
+	client  *githubclient.Client
+	headSHA string
 }
 
-func NewGitHubReporter(client *githubclient.Client) *GitHubReporter {
-	return &GitHubReporter{client: client}
+func NewGitHubReporter(client *githubclient.Client, headSHA string) *GitHubReporter {
+	return &GitHubReporter{client: client, headSHA: headSHA}
 }
 
 func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, repo string, prNumber int) error {
@@ -61,7 +62,7 @@ func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, 
 	summary := fmt.Sprintf("Decision: %s | Risk: %s | %d findings | Cost: $%.4f",
 		v.Decision, v.Risk, len(v.Findings), v.TotalCostUSD)
 
-	if err := r.client.CreateCheckRun(ctx, owner, repo, "acig", conclusion, title, summary); err != nil {
+	if err := r.client.CreateCheckRun(ctx, owner, repo, "acig", conclusion, title, summary, r.headSHA); err != nil {
 		slog.Warn("failed to create check run", "error", err)
 	}
 
