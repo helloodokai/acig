@@ -11,16 +11,17 @@ import (
 )
 
 var (
-	verbose     bool
-	configPath  string
-	profile     string
-	budgetUSD   float64
-	format      string
-	outputPath  string
-	diffRange   string
-	prRef       string
-	charterPath string
-	commitSHA   string
+	verbose       bool
+	configPath    string
+	profile       string
+	budgetUSD     float64
+	format        string
+	outputPath    string
+	diffRange     string
+	prRef         string
+	charterPath   string
+	commitSHA     string
+	suppressPath  string
 )
 
 var rootCmd = &cobra.Command{
