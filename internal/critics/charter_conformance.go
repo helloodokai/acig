@@ -14,6 +14,18 @@ import (
 	"github.com/helloodokai/acig/internal/verdict"
 )
 
+// LookPathFunc is the function signature for finding executables.
+// Defaults to exec.LookPath but can be overridden in tests.
+var LookPathFunc = exec.LookPath
+
+// CommandBuilder creates an exec.Cmd. Defaults to exec.CommandContext but can
+// be overridden in tests to inject mock behavior.
+var CommandBuilder = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, name, args...)
+}
+
+// CharterConformance checks a diff against a charter.yaml specification for conformance.
+// It shells out to the charter binary and maps findings into acig's verdict shape.
 type CharterConformance struct {
 	baseCritic
 }
@@ -24,6 +36,7 @@ func init() {
 	})
 }
 
+// Run executes the charter conformance check by shelling out to the charter binary.
 func (cc *CharterConformance) Run(ctx context.Context, d *diff.Diff, pc *Context) (*verdict.CriticResult, error) {
 	start := time.Now()
 
@@ -45,7 +58,7 @@ func (cc *CharterConformance) Run(ctx context.Context, d *diff.Diff, pc *Context
 		}, nil
 	}
 
-	charterBin, err := exec.LookPath("charter")
+	charterBin, err := LookPathFunc("charter")
 	if err != nil {
 		slog.Debug("charter_conformance: charter binary not found in PATH, skipping")
 		return &verdict.CriticResult{
@@ -56,7 +69,7 @@ func (cc *CharterConformance) Run(ctx context.Context, d *diff.Diff, pc *Context
 
 	diffContent := d.RawPatch
 
-	cmd := exec.CommandContext(ctx, charterBin, "conformance", charterPath, "--format", "json")
+	cmd := CommandBuilder(ctx, charterBin, "conformance", charterPath, "--diff", "-", "--format", "json")
 	cmd.Stdin = strings.NewReader(diffContent)
 
 	output, err := cmd.Output()
@@ -93,12 +106,19 @@ func (cc *CharterConformance) Run(ctx context.Context, d *diff.Diff, pc *Context
 	}, nil
 }
 
+func resolveCharterPath(pc *Context) string {
+	if pc.Config != nil && pc.Config.Charter.Path != "" {
+		return pc.Config.Charter.Path
+	}
+	return ""
+}
+
 type charterVerdict struct {
-	CharterID string `json:"charter_id"`
-	Goal      string `json:"goal"`
-	Status    string `json:"status"`
-	Score     float64 `json:"score"`
-	Findings  []charterFinding `json:"findings"`
+	CharterID string            `json:"charter_id"`
+	Goal      string            `json:"goal"`
+	Status    string            `json:"status"`
+	Score     float64           `json:"score"`
+	Findings  []charterFinding  `json:"findings"`
 }
 
 type charterFinding struct {
@@ -133,13 +153,6 @@ func convertCharterFindings(cv charterVerdict) []verdict.Finding {
 	}
 
 	return findings
-}
-
-func resolveCharterPath(pc *Context) string {
-	if pc.Config != nil && pc.Config.Charter.Path != "" {
-		return pc.Config.Charter.Path
-	}
-	return ""
 }
 
 func mapCharterSeverity(s string) verdict.Severity {
