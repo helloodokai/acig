@@ -27,9 +27,7 @@ archives:
         format: zip
 
 brews:
-  - id: acig
-    name: acig
-    repository:
+  - repository:
       owner: helloodokai
       name: tap
     directory: Formula
