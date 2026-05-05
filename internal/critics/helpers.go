@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -119,10 +120,39 @@ func repairJSON(s string) string {
 		return "{}"
 	}
 
+	if strings.HasPrefix(s, "```") {
+		s = stripMarkdownFence(s)
+	}
+
+	// Remove trailing content after the last valid JSON closing brace/bracket.
+	// Models sometimes append prose after the JSON block.
+	lastClose := strings.LastIndex(s, "}")
+	lastBracket := strings.LastIndex(s, "]")
+	endIdx := lastClose
+	if lastBracket > endIdx {
+		endIdx = lastBracket
+	}
+	if endIdx > 0 {
+		// Keep content up to and including the last } or ]
+		s = s[:endIdx+1]
+	}
+
+	// Try to fix truncated JSON:
+	// 1. Remove trailing commas before ] or }
+	s = regexp.MustCompile(`,\s*([}\]])`).ReplaceAllString(s, "$1")
+
+	// 2. If the string starts with { but doesn't end with }, close unclosed containers
 	if strings.HasPrefix(s, "{") && !strings.HasSuffix(s, "}") {
+		// Remove any trailing incomplete key:value pair after the last comma
+		// inside the deepest open structure.
 		lastComma := strings.LastIndex(s, ",")
 		if lastComma > 0 {
-			s = s[:lastComma]
+			// Check if everything after the last comma looks like a complete pair
+			after := strings.TrimSpace(s[lastComma+1:])
+			hasColon := strings.Contains(after, ":")
+			if !hasColon {
+				s = s[:lastComma]
+			}
 		}
 
 		openBraces := strings.Count(s, "{") - strings.Count(s, "}")
@@ -134,6 +164,20 @@ func repairJSON(s string) string {
 			s += "}"
 		}
 	}
+
+	// 3. Handle case where model outputs a ] where } is expected
+	// e.g. {"findings": [...], "risk": "low"]}
+	// becomes {"findings": [...], "risk": "low"}}
+	// This regex finds ] immediately followed by } or end-of-string when we
+	// actually need }. We handle this by replacing trailing ] with } when
+	// braces are still open.
+	if strings.HasPrefix(s, "{") {
+		openBraces := strings.Count(s, "{") - strings.Count(s, "}")
+		if openBraces > 0 && strings.HasSuffix(s, "]") {
+			s = s[:len(s)-1] + "}"
+		}
+	}
+
 	return s
 }
 
