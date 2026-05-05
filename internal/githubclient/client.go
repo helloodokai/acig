@@ -52,13 +52,13 @@ func (c *Client) PostStickyComment(ctx context.Context, owner, repo string, prNu
 	return nil
 }
 
-func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, name, conclusion, title, summary string) error {
+func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, name, conclusion, title, summary, headSHA string) error {
 	status := "completed"
 	_, _, err := c.client.Checks.CreateCheckRun(ctx, owner, repo, github.CreateCheckRunOptions{
 		Name:       name,
 		Status:     &status,
 		Conclusion: &conclusion,
-		HeadSHA:    "",
+		HeadSHA:    headSHA,
 		Output: &github.CheckRunOutput{
 			Title:   github.String(title),
 			Summary: github.String(summary),
@@ -70,6 +70,3 @@ func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, name, conclusi
 	return nil
 }
 
-func (c *Client) SetCheckRunSHA(sha string) {
-	// The SHA needs to be passed contextually; this is handled in the caller
-}
