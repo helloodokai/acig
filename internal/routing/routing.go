@@ -56,7 +56,7 @@ func (r *Router) clientForProvider(provider, host string) (models.Client, error)
 			apiKey = os.Getenv("OLLAMA_API_KEY")
 		}
 		if apiKey == "" {
-			return nil, fmt.Errorf("ollama cloud requires OLLAMA_API_KEY (set env or config)")
+			return nil, fmt.Errorf("ollama cloud requires OLLAMA_API_KEY (set env or .acig.toml)")
 		}
 		h := r.cfg.Models.OllamaCloud.Host
 		if h == "" {
@@ -72,16 +72,22 @@ func (r *Router) clientForProvider(provider, host string) (models.Client, error)
 		client = models.NewOllamaClient(h, "")
 
 	case "anthropic":
-		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+		apiKey := r.cfg.Models.Anthropic.APIKey
 		if apiKey == "" {
-			return nil, fmt.Errorf("anthropic requires ANTHROPIC_API_KEY")
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		}
+		if apiKey == "" {
+			return nil, fmt.Errorf("anthropic requires ANTHROPIC_API_KEY (set env or .acig.toml)")
 		}
 		client = models.NewAnthropicClient(apiKey, "")
 
 	case "openai":
-		apiKey := os.Getenv("OPENAI_API_KEY")
+		apiKey := r.cfg.Models.OpenAI.APIKey
 		if apiKey == "" {
-			return nil, fmt.Errorf("openai requires OPENAI_API_KEY")
+			apiKey = os.Getenv("OPENAI_API_KEY")
+		}
+		if apiKey == "" {
+			return nil, fmt.Errorf("openai requires OPENAI_API_KEY (set env or .acig.toml)")
 		}
 		client = models.NewOpenAIClient(apiKey, "")
 

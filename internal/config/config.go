@@ -24,6 +24,8 @@ type ModelsConfig struct {
 	FallbackToLocal  bool                      `toml:"fallback_to_local"`
 	Profiles         map[string]ProfileConfig   `toml:"profiles"`
 	OllamaCloud      OllamaCloudConfig         `toml:"ollama_cloud"`
+	Anthropic        ProviderConfig            `toml:"anthropic"`
+	OpenAI           ProviderConfig            `toml:"openai"`
 }
 
 type ProfileConfig struct {
@@ -39,7 +41,11 @@ type ModelRef struct {
 }
 
 type OllamaCloudConfig struct {
-	Host  string `toml:"host"`
+	Host   string `toml:"host"`
+	APIKey string `toml:"api_key"`
+}
+
+type ProviderConfig struct {
 	APIKey string `toml:"api_key"`
 }
 
@@ -77,8 +83,14 @@ func Default() *Config {
 				},
 			},
 			OllamaCloud: OllamaCloudConfig{
-				Host:  "https://ollama.com",
+				Host:   "https://ollama.com",
 				APIKey: "${OLLAMA_API_KEY}",
+			},
+			Anthropic: ProviderConfig{
+				APIKey: "${ANTHROPIC_API_KEY}",
+			},
+			OpenAI: ProviderConfig{
+				APIKey: "${OPENAI_API_KEY}",
 			},
 		},
 		Critics: CriticsConfig{
@@ -118,11 +130,19 @@ func Load(path string) (*Config, error) {
 
 func (c *Config) interpolate() {
 	c.Models.OllamaCloud.APIKey = expandEnv(c.Models.OllamaCloud.APIKey)
+	c.Models.Anthropic.APIKey = expandEnv(c.Models.Anthropic.APIKey)
+	c.Models.OpenAI.APIKey = expandEnv(c.Models.OpenAI.APIKey)
 }
 
 func (c *Config) resolveAPIKeys() {
 	if c.Models.OllamaCloud.APIKey == "" {
 		c.Models.OllamaCloud.APIKey = os.Getenv("OLLAMA_API_KEY")
+	}
+	if c.Models.Anthropic.APIKey == "" {
+		c.Models.Anthropic.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+	}
+	if c.Models.OpenAI.APIKey == "" {
+		c.Models.OpenAI.APIKey = os.Getenv("OPENAI_API_KEY")
 	}
 }
 
