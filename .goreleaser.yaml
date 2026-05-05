@@ -6,7 +6,7 @@ before:
 
 builds:
   - id: acig
-    main: ./cmd/acig
+    main: ./cmd/acig/main.go
     binary: acig
     env:
       - CGO_ENABLED=0
@@ -35,7 +35,7 @@ homebrew_casks:
     directory: Casks
     homepage: "https://github.com/helloodokai/acig"
     description: "Agentic CI Gateway - tiered code review via cheap critics + frontier adjudication"
-    binary: acig
+    binaries: [acig]
     hooks:
       post:
         install: |
