@@ -1,3 +1,5 @@
+version: 2
+
 before:
   hooks:
     - go mod tidy
@@ -20,23 +22,26 @@ builds:
 
 archives:
   - id: acig
-    format: tar.gz
+    formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
-brews:
+homebrew_casks:
   - repository:
       owner: helloodokai
       name: tap
-    directory: Formula
+    directory: Casks
     homepage: "https://github.com/helloodokai/acig"
     description: "Agentic CI Gateway - tiered code review via cheap critics + frontier adjudication"
-    install: |
-      bin.install "acig"
-    test: |
-      system "#{bin}/acig", "--help"
+    binary: acig
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/acig"]
+          end
 
 checksum:
   name_template: "checksums.txt"
