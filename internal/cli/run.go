@@ -104,7 +104,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	repo := detectRepo()
 	sha := detectSHA()
+	if baseSHA == "" {
 		baseSHA = detectBaseSHA()
+	}
 
 	slog.Info("running pipeline", "diff_range", diffRange, "files", d.Stats.FilesChanged, "profile", cfg.Models.DefaultProfile)
 

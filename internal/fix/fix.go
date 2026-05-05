@@ -278,9 +278,9 @@ func applyPatch(patch, targetFile string) (bool, error) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.WriteString(patch); err != nil {
+	if _, writeErr := tmpFile.WriteString(patch); writeErr != nil {
 		tmpFile.Close()
-		return false, fmt.Errorf("writing patch: %w", err)
+		return false, fmt.Errorf("writing patch: %w", writeErr)
 	}
 	tmpFile.Close()
 
@@ -332,8 +332,8 @@ func createBranch(name string) error {
 	if err != nil {
 		if strings.Contains(string(out), "already exists") {
 			cmd = exec.Command("git", "checkout", name)
-			if out2, err := cmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("checkout existing branch: %s: %w", strings.TrimSpace(string(out2)), err)
+			if out2, branchErr := cmd.CombinedOutput(); branchErr != nil {
+				return fmt.Errorf("checkout existing branch: %s: %w", strings.TrimSpace(string(out2)), branchErr)
 			}
 			return nil
 		}

@@ -43,8 +43,8 @@ fallback_to_local = false
 	}
 	defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.WriteString(content); err != nil {
-		t.Fatal(err)
+	if _, writeErr := tmpFile.WriteString(content); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	tmpFile.Close()
 
