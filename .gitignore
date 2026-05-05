@@ -24,5 +24,8 @@ vendor/
 .DS_Store
 Thumbs.db
 
+# Config (may contain API keys)
+.acig.toml
+
 # Build
 /acig

@@ -69,14 +69,13 @@ func TestModelForTier(t *testing.T) {
 	}
 
 	frontier := cfg.ModelForTier("frontier")
-	if frontier.Provider != "anthropic" {
-		t.Errorf("frontier provider = %s, want anthropic", frontier.Provider)
+	if frontier.Provider != "ollama_cloud" {
+		t.Errorf("frontier provider = %s, want ollama_cloud", frontier.Provider)
 	}
 }
 
 func TestExpandEnv(t *testing.T) {
-	os.Setenv("TEST_ACIG_KEY", "secret123")
-	defer os.Unsetenv("TEST_ACIG_KEY")
+	t.Setenv("TEST_ACIG_KEY", "secret123")
 
 	result := expandEnv("${TEST_ACIG_KEY}")
 	if result != "secret123" {

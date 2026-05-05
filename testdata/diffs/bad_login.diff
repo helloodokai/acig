@@ -18,4 +18,4 @@ index 0000000..abc1234
 +	return true
 +}
 +
-+var APIKey = "sk-abc123def456-very-secret-key-here"
++var APIKey = "EXAMPLE_NOT_A_REAL_KEY_xyz123"
