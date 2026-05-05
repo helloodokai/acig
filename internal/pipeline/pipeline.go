@@ -77,6 +77,12 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 		criticsToRun = append(criticsToRun, c)
 	}
 
+	if p.cfg.Charter.Path != "" {
+		if cc, ok := critics.Get("charter_conformance"); ok {
+			criticsToRun = append(criticsToRun, cc)
+		}
+	}
+
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(defaultConcurrency)
 

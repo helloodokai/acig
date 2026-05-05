@@ -19,6 +19,7 @@ var (
 	outputPath  string
 	diffRange   string
 	prRef       string
+	charterPath string
 )
 
 var rootCmd = &cobra.Command{

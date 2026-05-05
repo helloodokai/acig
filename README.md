@@ -119,7 +119,12 @@ jobs:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: acig run --format both --out acig-verdict --profile cloud
+        run: |
+          charter_conformance="${CHARTER_PATH:-}"
+          if [ -n "$charter_conformance" ]; then
+            CHARTER_FLAGS="--charter $charter_conformance"
+          fi
+          acig run --format both --out acig-verdict --profile cloud $CHARTER_FLAGS
       - uses: actions/upload-artifact@v4
         with:
           name: acig-verdict
@@ -160,6 +165,7 @@ jobs:
 | `--out` | stdout | Output file base path (extensions added automatically) |
 | `--budget` | from config | Per-run budget in USD |
 | `--profile` | from config | `cloud` or `local` |
+| `--charter` | — | Path to charter.yaml for conformance checking |
 
 ### `acig fix` flags
 
@@ -246,14 +252,20 @@ trigger_on = ["risk:high", "risk:critical", "conflict"]
 
 [paths]
 critical = ["src/auth/**", "src/payments/**", "migrations/**"]
+
+[charter]
+path = ".charters/ch-2026-05-04-abc123.yaml"   # optional: path to a charter file for conformance checking
+auto = true                                      # optional: auto-detect from PR body "Charter:" trailer
 ```
 
 **Key options:**
 - `budget.per_run_usd` — maximum spend per `acig run` invocation (default: $0.25)
 - `models.default_profile` — `cloud` or `local`
 - `models.fallback_to_local` — if Ollama Cloud fails, fall back to local Ollama
-- `critics.enabled` — which critics to run
+- `critics.enabled` — which critics to run (add `charter_conformance` when using charters)
 - `critics.adjudicator.trigger_on` — when to run the frontier adjudicator
+- `charter.path` — path to a charter.yaml for conformance checking
+- `charter.auto` — auto-detect charter from PR body `Charter:` trailer
 - `paths.critical` — glob patterns; changes here auto-bump risk to `high`
 
 ### Ollama Cloud as frontier
@@ -297,6 +309,7 @@ api_key = "${OLLAMA_API_KEY}"       # env var interpolation
 | `test_coverage_smell` | cheap | Missing tests for new logic, untested error paths |
 | `security_smell` | mid | SQL injection, XSS, hardcoded secrets, auth issues |
 | `perf_smell` | mid | N+1 queries, unbounded allocations, missing timeouts |
+| `charter_conformance` | cheap | Checks diff against a charter.yaml (optional, requires `charter`) |
 | `adjudicator` | frontier | Resolves conflicts between critics; adds missed findings |
 
 The **risk_classifier** always runs first and synchronously. Its output determines which other critics are needed. Low-risk diffs skip the expensive adjudicator entirely.
@@ -326,6 +339,55 @@ Run `acig schema` to output the full JSON schema. The verdict always includes:
 ```
 
 The schema is stable across versions. Use it to validate automated consumers.
+
+---
+
+## Charter Integration
+
+[CHARTER](https://github.com/helloodokai/charter) is acig's upstream companion — it hardens intent **before** an agent starts work, producing a `charter.yaml` contract. Acig's `charter_conformance` critic checks that the diff actually implements what the charter specifies.
+
+### Setup
+
+1. Install charter alongside acig:
+
+```bash
+brew tap helloodokai/charter-tap
+brew install charter
+```
+
+2. Reference a charter in your acig run:
+
+```bash
+acig run --charter .charters/ch-2026-05-04-abc123.yaml
+```
+
+Or set it in `.acig.toml`:
+
+```toml
+[charter]
+path = ".charters/ch-2026-05-04-abc123.yaml"
+```
+
+3. Or add a `Charter:` trailer to your PR body:
+
+```
+Charter: .charters/ch-2026-05-04-abc123.yaml
+```
+
+### What it checks
+
+When a charter is referenced, the `charter_conformance` critic runs `charter conformance` against the diff and surfaces findings for:
+
+- **Blast radius violations** — files changed outside the charter's declared scope
+- **Non-goal violations** — changes touching areas the charter explicitly excluded
+- **Blocking unknowns** — unresolved blocking questions that prevent merge
+- **Acceptance criteria gaps** — criteria the diff doesn't address
+
+Findings are merged into the acig verdict like any other critic output, so they influence the final decision and risk level.
+
+### When there's no charter
+
+The `charter_conformance` critic is **opt-in only**. If no charter is referenced (no `--charter` flag, no `[charter]` config, no `Charter:` trailer), the critic silently skips. Charter is not required for acig to work — it's an enhancement for teams that want stronger spec enforcement.
 
 ---
 

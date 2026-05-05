@@ -35,6 +35,7 @@ func init() {
 	runCmd.Flags().StringVar(&outputPath, "out", "", "output file path (without extension; .json/.md added as needed)")
 	runCmd.Flags().Float64Var(&budgetUSD, "budget", 0, "per-run budget in USD (overrides config)")
 	runCmd.Flags().StringVar(&profile, "profile", "", "profile to use: cloud, local (overrides config)")
+	runCmd.Flags().StringVar(&charterPath, "charter", "", "path to charter.yaml for conformance checking")
 
 	rootCmd.AddCommand(runCmd)
 }
@@ -53,6 +54,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	if budgetUSD > 0 {
 		cfg.Budget.PerRunUSD = budgetUSD
+	}
+
+	if charterPath != "" {
+		cfg.Charter.Path = charterPath
 	}
 
 	var d *diff.Diff

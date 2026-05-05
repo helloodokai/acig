@@ -9,10 +9,11 @@ import (
 )
 
 type Config struct {
-	Budget  BudgetConfig  `toml:"budget"`
-	Models  ModelsConfig   `toml:"models"`
-	Critics CriticsConfig  `toml:"critics"`
-	Paths   PathsConfig    `toml:"paths"`
+	Budget   BudgetConfig  `toml:"budget"`
+	Models   ModelsConfig   `toml:"models"`
+	Critics  CriticsConfig  `toml:"critics"`
+	Charter  CharterConfig  `toml:"charter"`
+	Paths    PathsConfig    `toml:"paths"`
 }
 
 type BudgetConfig struct {
@@ -60,6 +61,11 @@ type AdjudicatorCfg struct {
 
 type PathsConfig struct {
 	Critical []string `toml:"critical"`
+}
+
+type CharterConfig struct {
+	Path string `toml:"path"`
+	Auto bool   `toml:"auto"`
 }
 
 func Default() *Config {
