@@ -11,7 +11,8 @@ import (
 	"github.com/helloodokai/acig/internal/verdict"
 )
 
-const stickyMarker = "<!-- acig:sticky -->"
+const acigMarker = "<!-- acig:review -->"
+const acigReviewBot = "acig-review"
 
 type GitHubReporter struct {
 	client *githubclient.Client
@@ -22,24 +23,32 @@ func NewGitHubReporter(client *githubclient.Client) *GitHubReporter {
 }
 
 func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, repo string, prNumber int) error {
-	md := FormatMarkdown(v)
-
-	var body strings.Builder
-	body.WriteString(stickyMarker + "\n")
-	body.WriteString(md)
-	body.WriteString("\n\n<details>\n<summary>Verdict JSON</summary>\n\n```json\n")
-
-	jsonBody, err := verdictJSON(v)
-	if err != nil {
-		slog.Warn("failed to marshal verdict for github comment", "error", err)
-	} else {
-		body.WriteString(jsonBody)
+	if err := r.dismissOldReviews(ctx, owner, repo, prNumber); err != nil {
+		slog.Warn("failed to dismiss old reviews", "error", err)
 	}
 
-	body.WriteString("\n```\n</details>\n")
+	r.client.RemoveStaleAcigComments(ctx, owner, repo, prNumber, acigMarker)
 
-	if err := r.client.PostStickyComment(ctx, owner, repo, prNumber, stickyMarker, body.String()); err != nil {
-		return fmt.Errorf("posting sticky comment: %w", err)
+	reviewBody := r.buildReviewBody(v)
+	reviewComments := r.buildReviewComments(v)
+	event := "COMMENT"
+	if v.Decision == verdict.DecisionBlock {
+		event = "REQUEST_CHANGES"
+	}
+
+	if err := r.client.CreateReview(ctx, owner, repo, prNumber, reviewBody, reviewComments, event); err != nil {
+		slog.Warn("failed to create review, falling back to comment", "error", err)
+		md := FormatMarkdown(v)
+		var body strings.Builder
+		body.WriteString(acigMarker + "\n")
+		body.WriteString(md)
+		body.WriteString("\n\n<details>\n<summary>Verdict JSON</summary>\n\n```json\n")
+		jsonBody, err := verdictJSON(v)
+		if err == nil {
+			body.WriteString(jsonBody)
+		}
+		body.WriteString("\n```\n</details>\n")
+		return r.client.PostStickyComment(ctx, owner, repo, prNumber, acigMarker, body.String())
 	}
 
 	conclusion := "success"
@@ -58,6 +67,101 @@ func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, 
 	}
 
 	return nil
+}
+
+func (r *GitHubReporter) dismissOldReviews(ctx context.Context, owner, repo string, prNumber int) error {
+	reviews, err := r.client.ListReviews(ctx, owner, repo, prNumber)
+	if err != nil {
+		return err
+	}
+
+	for _, rev := range reviews {
+		if rev.Body != nil && strings.Contains(*rev.Body, acigMarker) {
+			slog.Info("dismissing old acig review", "id", rev.GetID())
+			if err := r.client.DeleteReviewComments(ctx, owner, repo, prNumber, rev.GetID()); err != nil {
+				slog.Warn("failed to delete old review comments", "error", err)
+			}
+			msg := "acig re-run: replacing with updated review"
+			if err := r.client.DismissReview(ctx, owner, repo, prNumber, rev.GetID(), msg); err != nil {
+				slog.Warn("failed to dismiss old review", "id", rev.GetID(), "error", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (r *GitHubReporter) buildReviewBody(v *verdict.Verdict) string {
+	var body strings.Builder
+	body.WriteString(acigMarker + "\n")
+	body.WriteString(fmt.Sprintf("## acig: %s | risk=%s | %d finding(s) | $%.4f\n\n", v.Decision, v.Risk, len(v.Findings), v.TotalCostUSD))
+
+	body.WriteString("| Severity | Critic | Title | File |\n|----------|--------|-------|------|\n")
+	for _, f := range v.Findings {
+		file := f.File
+		if file == "" {
+			file = "—"
+		}
+		body.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", f.Severity, f.Critic, f.Title, file))
+	}
+
+	body.WriteString("\n<details>\n<summary>Verdict JSON</summary>\n\n```json\n")
+	jsonBody, err := verdictJSON(v)
+	if err == nil {
+		body.WriteString(jsonBody)
+	}
+	body.WriteString("\n```\n</details>\n")
+
+	return body.String()
+}
+
+func (r *GitHubReporter) buildReviewComments(v *verdict.Verdict) []githubclient.ReviewComment {
+	fileFindings := groupFindings(v.Findings)
+	var comments []githubclient.ReviewComment
+
+	for _, findings := range fileFindings {
+		if len(findings) == 0 || findings[0].File == "" || findings[0].LineStart <= 0 {
+			continue
+		}
+		var body strings.Builder
+		body.WriteString(fmt.Sprintf("**acig** found %d issue(s) here:\n\n", len(findings)))
+		for i, f := range findings {
+			if i > 0 {
+				body.WriteString("---\n")
+			}
+			body.WriteString(fmt.Sprintf("- [%s] **%s** (%s)\n  %s\n", f.Severity, f.Title, f.Critic, f.Detail))
+			if f.SuggestedFix != "" {
+				body.WriteString(fmt.Sprintf("  \n  **Suggested fix:** %s\n", f.SuggestedFix))
+			}
+		}
+		comments = append(comments, githubclient.ReviewComment{
+			Path:     findings[0].File,
+			Position: findings[0].LineStart,
+			Body:     body.String(),
+		})
+	}
+
+	return comments
+}
+
+func groupFindings(findings []verdict.Finding) [][]verdict.Finding {
+	groups := map[string][]verdict.Finding{}
+	var order []string
+	for _, f := range findings {
+		if f.File == "" || f.LineStart <= 0 {
+			continue
+		}
+		key := fmt.Sprintf("%s:%d", f.File, f.LineStart)
+		if _, exists := groups[key]; !exists {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], f)
+	}
+
+	var result [][]verdict.Finding
+	for _, key := range order {
+		result = append(result, groups[key])
+	}
+	return result
 }
 
 func verdictJSON(v *verdict.Verdict) (string, error) {

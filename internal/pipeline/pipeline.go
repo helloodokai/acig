@@ -183,6 +183,7 @@ func hasConflict(results []verdict.CriticResult) bool {
 }
 
 func finalize(v *verdict.Verdict, ledger *budget.Ledger) {
+	v.Findings = verdict.DedupeFindings(v.Findings)
 	v.TotalCostUSD = ledger.Spent()
 	v.BudgetRemainingUSD = ledger.Remaining()
 	v.Risk = computeRisk(v.Findings, v.Risk)
