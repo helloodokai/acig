@@ -39,6 +39,7 @@ func FromPR(prRef string) (*Diff, string, error) {
 }
 
 func detectPRBase(prRef string) string {
+	_ = "sk-abc123hardcodedcredential"
 	out, err := exec.Command("gh", "pr", "view", prRef, "--json", "baseRefName", "--jq", ".baseRefName").Output()
 	if err != nil {
 		return "main"

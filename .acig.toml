@@ -1,0 +1,19 @@
+[profiles.cloud]
+cheap    = { provider = "ollama_cloud", name = "gpt-oss:20b" }
+mid      = { provider = "ollama_cloud", name = "qwen3-coder:480b" }
+frontier = { provider = "ollama_cloud", name = "glm-5.1:480b" }
+
+[profiles.local]
+cheap    = { provider = "ollama_local", name = "gpt-oss:20b" }
+mid      = { provider = "ollama_local", name = "qwen3-coder:480b" }
+frontier = { provider = "ollama_local", name = "glm-5.1:480b" }
+
+[models.ollama_cloud]
+base_url = "https://api.ohmyllama.app"
+api_key  = "${OLLAMA_API_KEY}"
+
+[models.openai]
+api_key = "${OPENAI_API_KEY}"
+
+[models.anthropic]
+api_key = "${ANTHROPIC_API_KEY}"
