@@ -139,7 +139,11 @@ jobs:
 | `ANTHROPIC_API_KEY` | No | For frontier adjudicator on high-risk diffs |
 | `GITHUB_TOKEN` | Auto | Needs `pull-requests: write` and `checks: write` permissions |
 
-`acig` posts a **sticky PR comment** (updated on each push) with a markdown summary and a collapsible JSON block, plus a **check run** named `acig`.
+`acig` posts a **GitHub Pull Request Review** with inline comments on the relevant lines, plus an overall review summary. On re-runs, previous acig reviews are dismissed and replaced. Block verdicts result in `REQUEST_CHANGES`; pass/warn result in `COMMENT`. A **check run** named `acig` is also created.
+
+### Finding deduplication
+
+When multiple critics flag the same issue (e.g. both `risk_classifier` and `security_smell` report a hardcoded secret in the same file), acig deduplicates findings by matching on severity + file + normalized title + detail prefix. Only the first finding is kept, avoiding noise in the review.
 
 ---
 
