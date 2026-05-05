@@ -92,8 +92,8 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]Result, error
 	slog.Info("grouped findings for fix", "files", len(groups), "findings", len(v.Findings))
 
 	branchName := fmt.Sprintf("%s/%s", opts.BranchPrefix, sha[:8])
-	if err := createBranch(branchName); err != nil {
-		return nil, fmt.Errorf("creating branch: %w", err)
+	if createErr := createBranch(branchName); createErr != nil {
+		return nil, fmt.Errorf("creating branch: %w", createErr)
 	}
 	slog.Info("created fix branch", "branch", branchName)
 

@@ -17,7 +17,7 @@ import (
 	"github.com/helloodokai/acig/internal/verdict"
 )
 
-const defaultConcurrency = 4
+const defaultConcurrency = 8
 
 type Pipeline struct {
 	cfg          *config.Config
@@ -41,29 +41,10 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 		GeneratedAt:   time.Now().UTC(),
 	}
 
-	riskCritic, ok := critics.Get("risk_classifier")
-	if !ok {
-		return nil, fmt.Errorf("risk_classifier critic not registered")
-	}
-
-	slog.Info("running risk classifier", "critic", riskCritic.ID())
-	riskResult, err := riskCritic.Run(ctx, p.d, pc)
-	if err != nil {
-		return nil, fmt.Errorf("risk classifier failed: %w", err)
-	}
-	pc.Result.CriticResults = append(pc.Result.CriticResults, *riskResult)
-	pc.Result.Findings = append(pc.Result.Findings, riskResult.Findings...)
-
-	risk := classifyRisk(riskResult)
-	pc.Risk = risk
-	if pc.Result.Risk == "" {
-		pc.Result.Risk = risk
-	}
-
 	enabled := critics.EnabledIDs(p.cfg.Critics.Enabled)
-	var criticsToRun []critics.Critic
+	var allCritics []critics.Critic
 	for _, id := range enabled {
-		if id == "risk_classifier" || id == "adjudicator" {
+		if id == "adjudicator" {
 			continue
 		}
 		c, ok := critics.Get(id)
@@ -71,16 +52,12 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 			slog.Warn("unknown critic, skipping", "id", id)
 			continue
 		}
-		if p.ledger.Exhausted() {
-			slog.Warn("budget exhausted, skipping critic", "id", id)
-			continue
-		}
-		criticsToRun = append(criticsToRun, c)
+		allCritics = append(allCritics, c)
 	}
 
 	if p.cfg.Charter.Path != "" {
 		if cc, ok := critics.Get("charter_conformance"); ok {
-			criticsToRun = append(criticsToRun, cc)
+			allCritics = append(allCritics, cc)
 		}
 	}
 
@@ -88,8 +65,9 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 	g.SetLimit(defaultConcurrency)
 
 	var resultsMu sync.Mutex
+	var riskResult *verdict.CriticResult
 
-	for _, c := range criticsToRun {
+	for _, c := range allCritics {
 		c := c
 		g.Go(func() error {
 			slog.Info("running critic", "id", c.ID())
@@ -107,6 +85,9 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 			resultsMu.Lock()
 			pc.Result.CriticResults = append(pc.Result.CriticResults, *result)
 			pc.Result.Findings = append(pc.Result.Findings, result.Findings...)
+			if c.ID() == "risk_classifier" {
+				riskResult = result
+			}
 			resultsMu.Unlock()
 			return nil
 		})
@@ -114,6 +95,15 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 
 	if err := g.Wait(); err != nil {
 		return nil, fmt.Errorf("critic fan-out: %w", err)
+	}
+
+	risk := verdict.RiskLow
+	if riskResult != nil {
+		risk = classifyRisk(riskResult)
+	}
+	pc.Risk = risk
+	if pc.Result.Risk == "" {
+		pc.Result.Risk = risk
 	}
 
 	shouldRunAdjudicator := false
