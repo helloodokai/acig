@@ -138,6 +138,7 @@ jobs:
 | Command | Description |
 |---------|-------------|
 | `acig run` | Run the critic pipeline on a diff |
+| `acig fix` | Auto-fix findings and create a PR |
 | `acig install-hook` | Install the acig pre-push hook |
 | `acig explain <verdict.json>` | Pretty-print a verdict for humans |
 | `acig doctor` | Check that backends are reachable and API keys are set |
@@ -153,6 +154,36 @@ jobs:
 | `--out` | stdout | Output file base path (extensions added automatically) |
 | `--budget` | from config | Per-run budget in USD |
 | `--profile` | from config | `cloud` or `local` |
+
+### `acig fix` flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--diff` | auto-detect | Git diff range (e.g. `HEAD~3..HEAD`) |
+| `--config` | `.acig.toml` | Config file path |
+| `--budget` | from config | Per-run budget in USD |
+| `--profile` | from config | `cloud` or `local` |
+| `--dry-run` | false | Show patches without applying |
+| `--no-push` | false | Apply fixes but don't push or create PR |
+| `--max-iterations` | 10 | Maximum number of fix iterations |
+| `--branch-prefix` | `acig-fix` | Prefix for the fix branch name |
+
+### Auto-Fix (`acig fix`)
+
+`acig fix` runs the critic pipeline, then uses the frontier model to generate unified diffs that address each finding. It creates one commit per file, pushes a branch, and opens a PR with `gh`:
+
+```bash
+# Auto-fix all findings on current branch, push and create PR
+acig fix --profile cloud
+
+# Dry-run: show patches without applying
+acig fix --dry-run
+
+# Fix specific range without pushing
+acig fix --diff HEAD~3..HEAD --no-push
+```
+
+Each commit message references the finding titles (e.g. `fix(acig): missing error handling, SQL injection in auth`). The PR body includes a table of all fixes with per-file status.
 
 ---
 
