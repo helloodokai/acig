@@ -20,16 +20,16 @@ func NewRouter(cfg *config.Config) *Router {
 	}
 }
 
-func (r *Router) ClientForTier(tier string) (models.Client, string, error) {
+func (r *Router) resolveClient(tier string) (models.Client, string, error) {
 	ref := r.cfg.ModelForTier(tier)
-	client, err := r.clientForProvider(ref.Provider, ref.Host)
+	client, err := r.clientForProvider(ref)
 	if err != nil && r.cfg.Models.FallbackToLocal && ref.Provider == "ollama_cloud" {
 		localRef := config.ModelRef{
 			Provider: "ollama_local",
 			Name:     "qwen2.5-coder:7b",
 			Host:     "http://localhost:11434",
 		}
-		fallback, fallbackErr := r.clientForProvider(localRef.Provider, localRef.Host)
+		fallback, fallbackErr := r.clientForProvider(localRef)
 		if fallbackErr != nil {
 			return nil, "", fmt.Errorf("cloud error: %w; local fallback also failed: %v", err, fallbackErr)
 		}
@@ -41,15 +41,19 @@ func (r *Router) ClientForTier(tier string) (models.Client, string, error) {
 	return client, ref.Name, nil
 }
 
-func (r *Router) clientForProvider(provider, host string) (models.Client, error) {
-	if c, ok := r.clients[provider+"/"+host]; ok {
+func (r *Router) ClientForTier(tier string) (models.Client, string, error) {
+	return r.resolveClient(tier)
+}
+
+func (r *Router) clientForProvider(ref config.ModelRef) (models.Client, error) {
+	key := ref.Provider + "/" + ref.Host + "/" + ref.Name
+	if c, ok := r.clients[key]; ok {
 		return c, nil
 	}
 
 	var client models.Client
-	var err error
 
-	switch provider {
+	switch ref.Provider {
 	case "ollama_cloud":
 		apiKey := r.cfg.Models.OllamaCloud.APIKey
 		if apiKey == "" {
@@ -65,7 +69,7 @@ func (r *Router) clientForProvider(provider, host string) (models.Client, error)
 		client = models.NewOllamaClient(h, apiKey)
 
 	case "ollama_local":
-		h := host
+		h := ref.Host
 		if h == "" {
 			h = "http://localhost:11434"
 		}
@@ -79,7 +83,7 @@ func (r *Router) clientForProvider(provider, host string) (models.Client, error)
 		if apiKey == "" {
 			return nil, fmt.Errorf("anthropic requires ANTHROPIC_API_KEY (set env or .acig.toml)")
 		}
-		client = models.NewAnthropicClient(apiKey, "")
+		client = models.NewAnthropicClient(apiKey, ref.Name)
 
 	case "openai":
 		apiKey := r.cfg.Models.OpenAI.APIKey
@@ -89,16 +93,12 @@ func (r *Router) clientForProvider(provider, host string) (models.Client, error)
 		if apiKey == "" {
 			return nil, fmt.Errorf("openai requires OPENAI_API_KEY (set env or .acig.toml)")
 		}
-		client = models.NewOpenAIClient(apiKey, "")
+		client = models.NewOpenAIClient(apiKey, ref.Name)
 
 	default:
-		return nil, fmt.Errorf("unknown provider: %s", provider)
+		return nil, fmt.Errorf("unknown provider: %s", ref.Provider)
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	r.clients[provider+"/"+host] = client
+	r.clients[key] = client
 	return client, nil
 }
