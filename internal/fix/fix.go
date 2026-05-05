@@ -77,7 +77,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]Result, error
 		cfg.Models.DefaultProfile = opts.Profile
 	}
 
-	pipe := pipeline.New(cfg, router, ledger, d)
+	pipe := pipeline.New(cfg, router, ledger, d, nil)
 	v, err := pipe.Execute(ctx, repo, sha, "")
 	if err != nil {
 		return nil, fmt.Errorf("pipeline execution: %w", err)

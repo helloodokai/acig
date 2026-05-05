@@ -37,6 +37,7 @@ func init() {
 	runCmd.Flags().StringVar(&profile, "profile", "", "profile to use: cloud, local (overrides config)")
 	runCmd.Flags().StringVar(&charterPath, "charter", "", "path to charter.yaml for conformance checking")
 	runCmd.Flags().StringVar(&commitSHA, "sha", "", "commit SHA for check runs (default: auto-detect)")
+	runCmd.Flags().StringVar(&suppressPath, "suppress", "", "path to suppressions file (default: .acig-suppressions.toml)")
 
 	rootCmd.AddCommand(runCmd)
 }
@@ -122,7 +123,15 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	slog.Info("running pipeline", "diff_range", diffRange, "files", d.Stats.FilesChanged, "profile", cfg.Models.DefaultProfile)
 
-	pipe := pipeline.New(cfg, router, ledger, d)
+	suppressions, err := verdict.LoadSuppressions(detectSuppressionsPath())
+	if err != nil {
+		slog.Warn("failed to load suppressions", "error", err)
+	}
+	if len(suppressions) > 0 {
+		slog.Info("loaded suppressions", "count", len(suppressions))
+	}
+
+	pipe := pipeline.New(cfg, router, ledger, d, suppressions)
 	v, err := pipe.Execute(ctx, repo, sha, baseSHA)
 	if err != nil {
 		return fmt.Errorf("pipeline execution: %w", err)
@@ -272,4 +281,15 @@ func detectPRNumber() (int, error) {
 		return event.Number, nil
 	}
 	return 0, fmt.Errorf("no PR number found in event")
+}
+
+func detectSuppressionsPath() string {
+	if suppressPath != "" {
+		return suppressPath
+	}
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return ".acig-suppressions.toml"
+	}
+	return strings.TrimSpace(string(out)) + "/.acig-suppressions.toml"
 }

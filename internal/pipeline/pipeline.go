@@ -20,14 +20,15 @@ import (
 const defaultConcurrency = 4
 
 type Pipeline struct {
-	cfg    *config.Config
-	router *routing.Router
-	ledger *budget.Ledger
-	d      *diff.Diff
+	cfg          *config.Config
+	router       *routing.Router
+	ledger       *budget.Ledger
+	d            *diff.Diff
+	suppressions []verdict.Suppression
 }
 
-func New(cfg *config.Config, router *routing.Router, ledger *budget.Ledger, d *diff.Diff) *Pipeline {
-	return &Pipeline{cfg: cfg, router: router, ledger: ledger, d: d}
+func New(cfg *config.Config, router *routing.Router, ledger *budget.Ledger, d *diff.Diff, suppressions []verdict.Suppression) *Pipeline {
+	return &Pipeline{cfg: cfg, router: router, ledger: ledger, d: d, suppressions: suppressions}
 }
 
 func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*verdict.Verdict, error) {
@@ -147,7 +148,7 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 		}
 	}
 
-	finalize(pc.Result, p.ledger)
+	finalize(pc.Result, p.ledger, p.suppressions)
 	return pc.Result, nil
 }
 
@@ -182,8 +183,9 @@ func hasConflict(results []verdict.CriticResult) bool {
 	return len(severityCounts) >= 3
 }
 
-func finalize(v *verdict.Verdict, ledger *budget.Ledger) {
+func finalize(v *verdict.Verdict, ledger *budget.Ledger, suppressions []verdict.Suppression) {
 	v.Findings = verdict.DedupeFindings(v.Findings)
+	v.Findings = verdict.FilterFindings(v.Findings, suppressions)
 	v.TotalCostUSD = ledger.Spent()
 	v.BudgetRemainingUSD = ledger.Remaining()
 	v.Risk = computeRisk(v.Findings, v.Risk)
