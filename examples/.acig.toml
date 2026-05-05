@@ -1,0 +1,29 @@
+[budget]
+per_run_usd = 0.25
+
+[models]
+default_profile   = "cloud"
+fallback_to_local = true
+
+[models.profiles.cloud]
+cheap    = { provider = "ollama_cloud", name = "gpt-oss:20b" }
+mid      = { provider = "ollama_cloud", name = "qwen3-coder:480b" }
+frontier = { provider = "anthropic",    name = "claude-sonnet-4-6" }
+
+[models.profiles.local]
+cheap    = { provider = "ollama_local", name = "qwen2.5-coder:7b",  host = "http://localhost:11434" }
+mid      = { provider = "ollama_local", name = "qwen2.5-coder:32b", host = "http://localhost:11434" }
+frontier = { provider = "anthropic",    name = "claude-sonnet-4-6" }
+
+[models.ollama_cloud]
+host    = "https://ollama.com"
+api_key = "${OLLAMA_API_KEY}"
+
+[critics]
+enabled = ["risk_classifier", "style_conformance", "test_coverage_smell", "security_smell", "perf_smell"]
+
+[critics.adjudicator]
+trigger_on = ["risk:high", "risk:critical", "conflict"]
+
+[paths]
+critical = ["src/auth/**", "src/payments/**", "migrations/**"]

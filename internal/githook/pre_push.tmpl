@@ -1,0 +1,31 @@
+#!/bin/sh
+# acig pre-push hook
+# Runs acig on the commits about to be pushed.
+# Bypass with ACIG_SKIP=1
+
+if [ "$ACIG_SKIP" = "1" ]; then
+  echo "acig: pre-push hook skipped (ACIG_SKIP=1)"
+  exit 0
+fi
+
+echo "acig: running pre-push check..."
+
+acig run --format md --profile cloud
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 2 ]; then
+  echo ""
+  echo "acig: BLOCKED — push rejected due to blocking findings."
+  echo "acig: Fix the issues or use ACIG_SKIP=1 to bypass."
+  exit 1
+elif [ $EXIT_CODE -eq 1 ]; then
+  echo ""
+  echo "acig: WARNINGS found, but push allowed."
+  exit 0
+elif [ $EXIT_CODE -ge 10 ]; then
+  echo ""
+  echo "acig: Tool error (exit $EXIT_CODE). Allowing push."
+  exit 0
+fi
+
+exit 0

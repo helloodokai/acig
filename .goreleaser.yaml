@@ -1,0 +1,53 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: acig
+    main: ./cmd/acig
+    binary: acig
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: acig
+    format: tar.gz
+    name_template >- {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+brews:
+  - id: acig
+    name: acig
+    repository:
+      owner: helloodokai
+      name: tap
+    directory: Formula
+    homepage: "https://github.com/helloodokai/acig"
+    description: "Agentic CI Gateway - tiered code review via cheap critics + frontier adjudication"
+    install: |
+      bin.install "acig"
+    test: |
+      system "#{bin}/acig", "--help"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

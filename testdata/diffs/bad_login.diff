@@ -1,0 +1,21 @@
+diff --git a/src/auth/login.go b/src/auth/login.go
+new file mode 100644
+index 0000000..abc1234
+--- /dev/null
++++ b/src/auth/login.go
+@@ -0,0 +1,15 @@
++package auth
++
++import "database/sql"
++
++func Login(db *sql.DB, username, password string) bool {
++	query := "SELECT * FROM users WHERE username='" + username + "' AND password='" + password + "'"
++	row := db.QueryRow(query)
++	var id int
++	if err := row.Scan(&id); err != nil {
++		return false
++	}
++	return true
++}
++
++var APIKey = "sk-abc123def456-very-secret-key-here"

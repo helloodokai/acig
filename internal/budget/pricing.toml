@@ -1,0 +1,29 @@
+[models]
+
+[models."ollama_cloud/gpt-oss:20b"]
+input_per_mtok = 0.01
+output_per_mtok = 0.03
+
+[models."ollama_cloud/qwen3-coder:480b"]
+input_per_mtok = 0.06
+output_per_mtok = 0.18
+
+[models."ollama_cloud/gpt-oss:120b"]
+input_per_mtok = 0.04
+output_per_mtok = 0.12
+
+[models."anthropic/claude-sonnet-4-6"]
+input_per_mtok = 3.0
+output_per_mtok = 15.0
+
+[models."anthropic/claude-sonnet-4-6-20250514"]
+input_per_mtok = 3.0
+output_per_mtok = 15.0
+
+[models."openai/gpt-4o"]
+input_per_mtok = 2.5
+output_per_mtok = 10.0
+
+[models."openai/gpt-4o-mini"]
+input_per_mtok = 0.15
+output_per_mtok = 0.6
