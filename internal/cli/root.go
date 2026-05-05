@@ -56,10 +56,6 @@ func exitCodeForDecision(decision string) int {
 	}
 }
 
-func info(msg string) {
-	fmt.Fprintln(os.Stderr, msg)
-}
-
 func fatalf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
 	os.Exit(11)

@@ -24,7 +24,6 @@ type Pipeline struct {
 	router *routing.Router
 	ledger *budget.Ledger
 	d      *diff.Diff
-	mu     sync.Mutex
 }
 
 func New(cfg *config.Config, router *routing.Router, ledger *budget.Ledger, d *diff.Diff) *Pipeline {
