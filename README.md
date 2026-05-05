@@ -17,12 +17,14 @@ curl -sSL https://github.com/helloodokai/acig/releases/latest/download/acig_darw
 curl -sSL https://github.com/helloodokai/acig/releases/latest/download/acig_linux_amd64.tar.gz \
   | tar -xz -C /usr/local/bin acig
 
+# Homebrew
+brew tap helloodokai/tap
+brew install acig
+
 # Or build from source:
 git clone https://github.com/helloodokai/acig.git
 cd acig && make build && cp dist/acig /usr/local/bin/
 ```
-
-> **Homebrew coming soon** — tap will be at `helloodokai/tap`.
 
 ### 2. Set your API key
 
@@ -38,7 +40,8 @@ Get a key at [ollama.com/settings/keys](https://ollama.com/settings/keys). Ollam
 cd your-repo
 acig run --profile cloud           # auto-detects diff vs upstream
 acig run --diff HEAD~3..HEAD       # specific range
-acig run --format md               # human-readable markdown
+acig run --pr 42                   # review a GitHub PR by number or URL
+acig fix --profile cloud           # auto-fix findings and create a PR
 acig doctor                         # check your setup
 ```
 
@@ -149,6 +152,7 @@ jobs:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--diff` | auto-detect | Git diff range (e.g. `HEAD~3..HEAD`) |
+| `--pr` | — | GitHub PR number or URL to review |
 | `--config` | `.acig.toml` | Config file path |
 | `--format` | `json` | Output format: `json`, `md`, `both` |
 | `--out` | stdout | Output file base path (extensions added automatically) |
@@ -160,6 +164,7 @@ jobs:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--diff` | auto-detect | Git diff range (e.g. `HEAD~3..HEAD`) |
+| `--pr` | — | GitHub PR number or URL to fix |
 | `--config` | `.acig.toml` | Config file path |
 | `--budget` | from config | Per-run budget in USD |
 | `--profile` | from config | `cloud` or `local` |
@@ -167,6 +172,18 @@ jobs:
 | `--no-push` | false | Apply fixes but don't push or create PR |
 | `--max-iterations` | 10 | Maximum number of fix iterations |
 | `--branch-prefix` | `acig-fix` | Prefix for the fix branch name |
+
+### Reviewing a PR (`--pr`)
+
+Point acig at any GitHub PR without checking out the branch:
+
+```bash
+acig run --pr 42                          # by PR number
+acig run --pr https://github.com/owner/repo/pull/42  # by URL
+acig fix --pr 42 --dry-run                # preview fixes for a PR
+```
+
+Requires `gh` CLI with repo access.
 
 ### Auto-Fix (`acig fix`)
 
@@ -202,12 +219,12 @@ fallback_to_local = true
 [models.profiles.cloud]
 cheap    = { provider = "ollama_cloud", name = "gpt-oss:20b" }
 mid      = { provider = "ollama_cloud", name = "qwen3-coder:480b" }
-frontier = { provider = "openai",       name = "gpt-4o" }
+frontier = { provider = "ollama_cloud", name = "glm-5.1:480b" }
 
 [models.profiles.local]
 cheap    = { provider = "ollama_local", name = "qwen2.5-coder:7b",  host = "http://localhost:11434" }
 mid      = { provider = "ollama_local", name = "qwen2.5-coder:32b", host = "http://localhost:11434" }
-frontier = { provider = "openai",       name = "gpt-4o" }
+frontier = { provider = "ollama_local", name = "qwen2.5-coder:32b", host = "http://localhost:11434" }
 
 [models.ollama_cloud]
 host    = "https://ollama.com"
@@ -236,6 +253,19 @@ critical = ["src/auth/**", "src/payments/**", "migrations/**"]
 - `critics.enabled` — which critics to run
 - `critics.adjudicator.trigger_on` — when to run the frontier adjudicator
 - `paths.critical` — glob patterns; changes here auto-bump risk to `high`
+
+### Ollama Cloud as frontier
+
+Ollama Cloud hosts large models that work well as frontier adjudicators and fix generators — often cheaper than OpenAI/Anthropic:
+
+```toml
+[models.profiles.cloud]
+frontier = { provider = "ollama_cloud", name = "glm-5.1:480b" }
+# or:    frontier = { provider = "ollama_cloud", name = "kimi-k2.6:480b" }
+# or:    frontier = { provider = "ollama_cloud", name = "minimax-2.7:480b" }
+```
+
+You can mix providers: Ollama Cloud for cheap/mid, OpenAI for frontier, or vice versa.
 
 ### API keys
 
@@ -319,10 +349,11 @@ Approximate cost and latency on a representative ~200-line diff (5 files changed
 |------|----------|-------|------|---------|
 | cheap | Ollama Cloud | `gpt-oss:20b` | ~$0.001 | 1-5s |
 | mid | Ollama Cloud | `qwen3-coder:480b` | ~$0.005 | 2-6s |
+| frontier | Ollama Cloud | `glm-5.1:480b` | ~$0.01 | 3-8s |
+| frontier | OpenAI | `gpt-5-nano` | ~$0.05 | 1-3s |
 | cheap | Local Ollama | `qwen2.5-coder:7b` | $0 | 1-4s |
 | mid | Local Ollama | `qwen2.5-coder:32b` | $0 | 3-8s |
-| frontier | Anthropic | `claude-sonnet-4-6` | ~$0.03 | 2-6s |
-| | **Full pipeline (cloud)** | | **~$0.001** | **10-50s** |
+| | **Full pipeline (cloud)** | | **~$0.002** | **10-50s** |
 | | **Full pipeline (local)** | | **$0** | **8-30s** |
 
 *Latency varies by diff size, network, and model load. These are observed averages.*
@@ -334,34 +365,35 @@ A full cloud run on a typical diff costs well under $0.01 — ~40x cheaper than 
 ## How It Works
 
 ```
-┌─────────────┐
-│  acig run   │
-└─────┬───────┘
-      │
-      ▼
-┌──────────────────┐     cheap tier
-│  risk_classifier │◄──────────────── Ollama Cloud
-└─────┬────────────┘
-      │ risk = low/medium/high/critical
-      ▼
-┌──────────────────────────────────────────────┐
-│                 Fan-out (4 concurrent)       │
-│                                              │
-│  style_conformance  ──► cheap  ──► Cloud     │
-│  test_coverage_smell ──► cheap  ──► Cloud     │
-│  security_smell     ──► mid    ──► Cloud     │
-│  perf_smell         ──► mid    ──► Cloud     │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼ (if high-risk or critic conflict)
-              ┌────────────────┐
-              │  adjudicator   │◄── frontier ──► Anthropic
-              └────────────────┘
-                       │
-                       ▼
-              ┌────────────────┐
-              │  Verdict JSON  │──► stdout / file / GitHub
-              └────────────────┘
+┌─────────────┐                                    ┌─────────────┐
+│  acig run   │                                    │  acig fix    │
+└─────┬───────┘                                    └─────┬───────┘
+      │                                                  │
+      ▼                                                  ▼
+┌──────────────────┐     cheap tier              ┌─────────────────┐
+│  risk_classifier │◄──────────── Ollama Cloud  │  Run pipeline    │
+└─────┬────────────┘                           │  (same as run)   │
+      │ risk = low/medium/high/critical         └────────┬────────┘
+      ▼                                                   │
+┌──────────────────────────────────────────────┐          │
+│                 Fan-out (4 concurrent)       │          ▼
+│                                              │   ┌─────────────────┐
+│  style  ─────────► cheap  ──► Cloud          │   │  Group findings │
+│  tests  ─────────► cheap  ──► Cloud          │   │  by file        │
+│  security ───────► mid    ──► Cloud          │   └────────┬────────┘
+│  perf   ─────────► mid    ──► Cloud          │            │
+└──────────────────────┬───────────────────────┘            ▼
+                       │                          ┌─────────────────┐
+                       ▼                          │  Frontier model  │
+              ┌────────────────┐                 │  generates diff │
+              │  adjudicator   │◄── frontier ──► │  per file      │
+              └────────────────┘                 └────────┬────────┘
+                       │                                   │
+                       ▼                                   ▼
+              ┌────────────────┐                 ┌─────────────────┐
+              │  Verdict JSON  │──► stdout/file   │  git apply +    │
+              └────────────────┘   / GitHub       │  commit + PR    │
+                                                   └─────────────────┘
 ```
 
 ---
@@ -377,7 +409,7 @@ make lint               # golangci-lint
 make release-snapshot   # goreleaser snapshot
 ```
 
-Requires Go 1.22+, golangci-lint, and goreleaser.
+Requires Go 1.24+, golangci-lint, and goreleaser.
 
 ## License
 
