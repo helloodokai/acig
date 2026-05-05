@@ -19,16 +19,23 @@ import (
 
 const defaultConcurrency = 8
 
+type ProgressFunc func(criticID string, status string)
+
 type Pipeline struct {
 	cfg          *config.Config
 	router       *routing.Router
 	ledger       *budget.Ledger
 	d            *diff.Diff
 	suppressions []verdict.Suppression
+	onProgress   ProgressFunc
 }
 
 func New(cfg *config.Config, router *routing.Router, ledger *budget.Ledger, d *diff.Diff, suppressions []verdict.Suppression) *Pipeline {
 	return &Pipeline{cfg: cfg, router: router, ledger: ledger, d: d, suppressions: suppressions}
+}
+
+func (p *Pipeline) OnProgress(fn ProgressFunc) {
+	p.onProgress = fn
 }
 
 func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*verdict.Verdict, error) {
@@ -70,10 +77,16 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 	for _, c := range allCritics {
 		c := c
 		g.Go(func() error {
+			if p.onProgress != nil {
+				p.onProgress(c.ID(), "running")
+			}
 			slog.Info("running critic", "id", c.ID())
 			result, err := c.Run(gctx, p.d, pc)
 			if err != nil {
 				slog.Error("critic error", "id", c.ID(), "error", err)
+				if p.onProgress != nil {
+					p.onProgress(c.ID(), "error")
+				}
 				resultsMu.Lock()
 				pc.Result.CriticResults = append(pc.Result.CriticResults, verdict.CriticResult{
 					Critic: c.ID(),
@@ -89,6 +102,9 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 				riskResult = result
 			}
 			resultsMu.Unlock()
+			if p.onProgress != nil {
+				p.onProgress(c.ID(), "done")
+			}
 			return nil
 		})
 	}
@@ -127,13 +143,22 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 	if shouldRunAdjudicator && !p.ledger.Exhausted() {
 		adj, ok := critics.Get("adjudicator")
 		if ok {
+			if p.onProgress != nil {
+				p.onProgress("adjudicator", "running")
+			}
 			slog.Info("running adjudicator")
 			adjResult, err := adj.Run(ctx, p.d, pc)
 			if err != nil {
 				slog.Error("adjudicator error", "error", err)
+				if p.onProgress != nil {
+					p.onProgress("adjudicator", "error")
+				}
 			} else {
 				pc.Result.CriticResults = append(pc.Result.CriticResults, *adjResult)
 				pc.Result.Findings = append(pc.Result.Findings, adjResult.Findings...)
+				if p.onProgress != nil {
+					p.onProgress("adjudicator", "done")
+				}
 			}
 		}
 	}

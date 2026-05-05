@@ -14,11 +14,13 @@ import (
 
 	"github.com/helloodokai/acig/internal/budget"
 	"github.com/helloodokai/acig/internal/config"
+	"github.com/helloodokai/acig/internal/critics"
 	"github.com/helloodokai/acig/internal/diff"
 	"github.com/helloodokai/acig/internal/githubclient"
 	"github.com/helloodokai/acig/internal/pipeline"
 	"github.com/helloodokai/acig/internal/reporters"
 	"github.com/helloodokai/acig/internal/routing"
+	"github.com/helloodokai/acig/internal/ui"
 	"github.com/helloodokai/acig/internal/verdict"
 )
 
@@ -44,6 +46,8 @@ func init() {
 
 func runRun(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
+	showUI := ui.ShouldShowUI()
+	ui.SetupLogger(verbose)
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -72,7 +76,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("getting PR diff: %w", err)
 		}
 		baseSHA = baseRef
-		slog.Info("reviewing PR", "pr", prRef, "base", baseRef, "files", d.Stats.FilesChanged)
+		if showUI {
+			ui.PrintHeader(fmt.Sprintf("Reviewing PR %s — %d file(s) changed, +%d/-%d lines", prRef, d.Stats.FilesChanged, d.Stats.LinesAdded, d.Stats.LinesRemoved))
+		} else {
+			slog.Info("reviewing PR", "pr", prRef, "base", baseRef, "files", d.Stats.FilesChanged)
+		}
 	} else {
 		if diffRange == "" {
 			diffRange, err = detectDiffRange()
@@ -85,10 +93,19 @@ func runRun(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("getting diff: %w", err)
 		}
+		if showUI {
+			ui.PrintHeader(fmt.Sprintf("Reviewing %s — %d file(s) changed, +%d/-%d lines", diffRange, d.Stats.FilesChanged, d.Stats.LinesAdded, d.Stats.LinesRemoved))
+		} else {
+			slog.Info("running pipeline", "diff_range", diffRange, "files", d.Stats.FilesChanged, "profile", cfg.Models.DefaultProfile)
+		}
 	}
 
 	if d.Stats.FilesChanged == 0 {
-		slog.Info("no changes detected, passing")
+		if showUI {
+			ui.PrintSuccess("No changes detected")
+		} else {
+			slog.Info("no changes detected, passing")
+		}
 		v := &verdict.Verdict{
 			SchemaVersion:      "1",
 			Decision:           verdict.DecisionPass,
@@ -121,27 +138,77 @@ func runRun(cmd *cobra.Command, args []string) error {
 		baseSHA = detectBaseSHA()
 	}
 
-	slog.Info("running pipeline", "diff_range", diffRange, "files", d.Stats.FilesChanged, "profile", cfg.Models.DefaultProfile)
-
 	suppressions, err := verdict.LoadSuppressions(detectSuppressionsPath())
 	if err != nil {
 		slog.Warn("failed to load suppressions", "error", err)
 	}
-	if len(suppressions) > 0 {
-		slog.Info("loaded suppressions", "count", len(suppressions))
+	if showUI && len(suppressions) > 0 {
+		ui.PrintStepf("📋", "%d suppression(s) loaded", len(suppressions))
 	}
 
 	pipe := pipeline.New(cfg, router, ledger, d, suppressions)
+
+	if showUI {
+		ui.PrintStep("⏳", "Running critics...")
+		enabledIDs := critics.EnabledIDs(cfg.Critics.Enabled)
+		totalCritics := len(enabledIDs)
+		if totalCritics > 0 {
+			progress := ui.NewProgress("Critics", totalCritics)
+			pipe.OnProgress(func(criticID string, status string) {
+				if status == "done" {
+					progress.Increment(criticID)
+				} else if status == "error" {
+					progress.Increment(criticID + " (error)")
+				}
+			})
+		}
+	}
+
 	v, err := pipe.Execute(ctx, repo, sha, baseSHA)
 	if err != nil {
 		return fmt.Errorf("pipeline execution: %w", err)
 	}
 
+	if showUI && v.TotalDurationMS > 0 {
+		fmt.Fprintln(os.Stderr)
+	}
+
 	slog.Info("verdict", "decision", v.Decision, "risk", v.Risk, "findings", len(v.Findings), "cost_usd", fmt.Sprintf("%.4f", v.TotalCostUSD))
 
+	if showUI {
+		ui.PrintVerdict(ui.VerdictSummary{
+			Decision:     string(v.Decision),
+			RiskLevel:    string(v.Risk),
+			Findings:     len(v.Findings),
+			CostUSD:      v.TotalCostUSD,
+			DurationMS:   v.TotalDurationMS,
+			Suppressions: len(suppressions),
+		})
+
+		findings := make([]ui.FindingDisplay, len(v.Findings))
+		for i, f := range v.Findings {
+			findings[i] = ui.FindingDisplay{
+				Critic:   f.Critic,
+				Severity: string(f.Severity),
+				Title:    f.Title,
+				File:     f.File,
+				Line:     f.LineStart,
+			}
+		}
+		ui.PrintFindings(findings)
+	}
+
 	if shouldReportGitHub() {
+		if showUI {
+			ui.PrintStep("📤", "Posting review to GitHub...")
+		}
 		if err := reportToGitHub(ctx, cfg, v, sha); err != nil {
 			slog.Error("github report failed", "error", err)
+			if showUI {
+				ui.PrintError("GitHub report failed: " + err.Error())
+			}
+		} else if showUI {
+			ui.PrintSuccess("Review posted to GitHub")
 		}
 	}
 
