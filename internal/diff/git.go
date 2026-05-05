@@ -22,6 +22,30 @@ func FromFiles(patch string) (*Diff, error) {
 	return Parse(patch)
 }
 
+func FromPR(prRef string) (*Diff, string, error) {
+	cmd := exec.Command("gh", "pr", "diff", prRef)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, "", fmt.Errorf("gh pr diff %s: %w", prRef, err)
+	}
+
+	d, parseErr := Parse(string(out))
+	if parseErr != nil {
+		return nil, "", parseErr
+	}
+
+	baseRef := detectPRBase(prRef)
+	return d, baseRef, nil
+}
+
+func detectPRBase(prRef string) string {
+	out, err := exec.Command("gh", "pr", "view", prRef, "--json", "baseRefName", "--jq", ".baseRefName").Output()
+	if err != nil {
+		return "main"
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func AutoDetectRange() (string, error) {
 	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}").Output()
 	if err != nil {

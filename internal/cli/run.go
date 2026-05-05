@@ -30,6 +30,7 @@ var runCmd = &cobra.Command{
 
 func init() {
 	runCmd.Flags().StringVar(&diffRange, "diff", "", "git diff range (e.g. HEAD~3..HEAD). Default: auto-detect from upstream")
+	runCmd.Flags().StringVar(&prRef, "pr", "", "GitHub PR URL or number to review")
 	runCmd.Flags().StringVar(&format, "format", "json", "output format: json, md, both")
 	runCmd.Flags().StringVar(&outputPath, "out", "", "output file path (without extension; .json/.md added as needed)")
 	runCmd.Flags().Float64Var(&budgetUSD, "budget", 0, "per-run budget in USD (overrides config)")
@@ -54,16 +55,29 @@ func runRun(cmd *cobra.Command, args []string) error {
 		cfg.Budget.PerRunUSD = budgetUSD
 	}
 
-	if diffRange == "" {
-		diffRange, err = detectDiffRange()
-		if err != nil {
-			return fmt.Errorf("detecting diff range: %w", err)
-		}
-	}
+	var d *diff.Diff
+	var baseSHA string
 
-	d, err := diff.FromGitRange(diffRange)
-	if err != nil {
-		return fmt.Errorf("getting diff: %w", err)
+	if prRef != "" {
+		var baseRef string
+		d, baseRef, err = diff.FromPR(prRef)
+		if err != nil {
+			return fmt.Errorf("getting PR diff: %w", err)
+		}
+		baseSHA = baseRef
+		slog.Info("reviewing PR", "pr", prRef, "base", baseRef, "files", d.Stats.FilesChanged)
+	} else {
+		if diffRange == "" {
+			diffRange, err = detectDiffRange()
+			if err != nil {
+				return fmt.Errorf("detecting diff range: %w", err)
+			}
+		}
+
+		d, err = diff.FromGitRange(diffRange)
+		if err != nil {
+			return fmt.Errorf("getting diff: %w", err)
+		}
 	}
 
 	if d.Stats.FilesChanged == 0 {
@@ -90,7 +104,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	repo := detectRepo()
 	sha := detectSHA()
-	baseSHA := detectBaseSHA()
+		baseSHA = detectBaseSHA()
 
 	slog.Info("running pipeline", "diff_range", diffRange, "files", d.Stats.FilesChanged, "profile", cfg.Models.DefaultProfile)
 
@@ -99,6 +113,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("pipeline execution: %w", err)
 	}
+
+	slog.Info("verdict", "decision", v.Decision, "risk", v.Risk, "findings", len(v.Findings), "cost_usd", fmt.Sprintf("%.4f", v.TotalCostUSD))
 
 	if shouldReportGitHub() {
 		if err := reportToGitHub(ctx, cfg, v); err != nil {
