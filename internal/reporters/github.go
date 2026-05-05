@@ -12,7 +12,6 @@ import (
 )
 
 const acigMarker = "<!-- acig:review -->"
-const acigReviewBot = "acig-review"
 
 type GitHubReporter struct {
 	client *githubclient.Client
