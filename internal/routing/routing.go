@@ -3,6 +3,7 @@ package routing
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/helloodokai/acig/internal/config"
 	"github.com/helloodokai/acig/internal/models"
@@ -11,6 +12,7 @@ import (
 type Router struct {
 	cfg     *config.Config
 	clients map[string]models.Client
+	mu      sync.Mutex
 }
 
 func NewRouter(cfg *config.Config) *Router {
@@ -47,9 +49,12 @@ func (r *Router) ClientForTier(tier string) (models.Client, string, error) {
 
 func (r *Router) clientForProvider(ref config.ModelRef) (models.Client, error) {
 	key := ref.Provider + "/" + ref.Host + "/" + ref.Name
+	r.mu.Lock()
 	if c, ok := r.clients[key]; ok {
+		r.mu.Unlock()
 		return c, nil
 	}
+	r.mu.Unlock()
 
 	var client models.Client
 
@@ -99,6 +104,8 @@ func (r *Router) clientForProvider(ref config.ModelRef) (models.Client, error) {
 		return nil, fmt.Errorf("unknown provider: %s", ref.Provider)
 	}
 
+	r.mu.Lock()
 	r.clients[key] = client
+	r.mu.Unlock()
 	return client, nil
 }
