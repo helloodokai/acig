@@ -171,16 +171,22 @@ fallback_to_local = true
 [models.profiles.cloud]
 cheap    = { provider = "ollama_cloud", name = "gpt-oss:20b" }
 mid      = { provider = "ollama_cloud", name = "qwen3-coder:480b" }
-frontier = { provider = "anthropic",    name = "claude-sonnet-4-6" }
+frontier = { provider = "openai",       name = "gpt-4o" }
 
 [models.profiles.local]
 cheap    = { provider = "ollama_local", name = "qwen2.5-coder:7b",  host = "http://localhost:11434" }
 mid      = { provider = "ollama_local", name = "qwen2.5-coder:32b", host = "http://localhost:11434" }
-frontier = { provider = "anthropic",    name = "claude-sonnet-4-6" }
+frontier = { provider = "openai",       name = "gpt-4o" }
 
 [models.ollama_cloud]
 host    = "https://ollama.com"
 api_key = "${OLLAMA_API_KEY}"
+
+[models.openai]
+api_key = "${OPENAI_API_KEY}"
+
+[models.anthropic]
+api_key = "${ANTHROPIC_API_KEY}"
 
 [critics]
 enabled = ["risk_classifier", "style_conformance", "test_coverage_smell", "security_smell", "perf_smell"]
@@ -200,13 +206,22 @@ critical = ["src/auth/**", "src/payments/**", "migrations/**"]
 - `critics.adjudicator.trigger_on` — when to run the frontier adjudicator
 - `paths.critical` — glob patterns; changes here auto-bump risk to `high`
 
-### Environment variable interpolation
+### API keys
 
-Use `${VAR_NAME}` in config values to interpolate from environment:
+All provider keys can be set in `.acig.toml` or via environment variables. Config values support `${VAR}` interpolation:
 
 ```toml
+[models.openai]
+api_key = "${OPENAI_API_KEY}"      # reads from env var
+
+[models.anthropic]
+api_key = "sk-ant-..."              # or paste directly (add .acig.toml to .gitignore!)
+
 [models.ollama_cloud]
-api_key = "${OLLAMA_API_KEY}"
+api_key = "${OLLAMA_API_KEY}"       # env var interpolation
+```
+
+**Add `.acig.toml` to `.gitignore** if you put real keys in it — or use `${VAR}` interpolation to keep secrets out of the file.
 ```
 
 ---
