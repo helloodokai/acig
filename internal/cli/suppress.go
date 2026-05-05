@@ -76,8 +76,8 @@ func runSuppress(cmd *cobra.Command, args []string) error {
 	}
 
 	var v verdict.Verdict
-	if err := json.Unmarshal(data, &v); err != nil {
-		return fmt.Errorf("parsing verdict: %w", err)
+	if unmarshalErr := json.Unmarshal(data, &v); unmarshalErr != nil {
+		return fmt.Errorf("parsing verdict: %w", unmarshalErr)
 	}
 
 	if len(v.Findings) == 0 {
@@ -93,8 +93,8 @@ func runSuppress(cmd *cobra.Command, args []string) error {
 	} else {
 		for _, arg := range args {
 			idx := 0
-			if _, err := fmt.Sscanf(arg, "%d", &idx); err != nil {
-				return fmt.Errorf("invalid index %q: %w", arg, err)
+			if _, scanErr := fmt.Sscanf(arg, "%d", &idx); scanErr != nil {
+				return fmt.Errorf("invalid index %q: %w", arg, scanErr)
 			}
 			if idx < 0 || idx >= len(v.Findings) {
 				return fmt.Errorf("index %d out of range (0-%d)", idx, len(v.Findings)-1)

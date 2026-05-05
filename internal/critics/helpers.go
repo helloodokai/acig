@@ -19,7 +19,7 @@ import (
 )
 
 const maxDiffChars = 12000
-const maxCriticOutputTokens = 4096
+const maxCriticOutputTokens = 2048
 
 type baseCritic struct {
 	id         string
