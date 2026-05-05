@@ -97,6 +97,11 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]Result, error
 	}
 	slog.Info("created fix branch", "branch", branchName)
 
+	repoRoot, err := repoRootDir()
+	if err != nil {
+		return nil, fmt.Errorf("detecting repo root: %w", err)
+	}
+
 	var results []Result
 	applied := 0
 
@@ -108,6 +113,12 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]Result, error
 		if ledger.Exhausted() {
 			slog.Warn("budget exhausted, stopping")
 			break
+		}
+
+		if !isFixableFile(group.File) {
+			slog.Info("skipping non-fixable group", "file", group.File, "findings", len(group.Findings))
+			results = append(results, Result{Group: group, Error: "findings not associated with a fixable file"})
+			continue
 		}
 
 		slog.Info("fixing group", "file", group.File, "findings", len(group.Findings), "iteration", i+1)
@@ -123,7 +134,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]Result, error
 			continue
 		}
 
-		appliedOk, err := applyPatch(patch, group.File)
+		appliedOk, err := applyPatch(patch, group.File, repoRoot)
 		if err != nil || !appliedOk {
 			msg := "patch apply failed"
 			if err != nil {
@@ -134,7 +145,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]Result, error
 			continue
 		}
 
-		commitSHA, err := commitFix(group)
+		commitSHA, err := commitFix(group, repoRoot)
 		if err != nil {
 			slog.Warn("commit failed", "error", err)
 			results = append(results, Result{Group: group, Patch: patch, Error: err.Error()})
@@ -271,7 +282,7 @@ func extractPatch(content string) string {
 	return strings.TrimSpace(content)
 }
 
-func applyPatch(patch, targetFile string) (bool, error) {
+func applyPatch(patch, targetFile, repoRoot string) (bool, error) {
 	tmpFile, err := os.CreateTemp("", "acig-fix-*.patch")
 	if err != nil {
 		return false, fmt.Errorf("creating temp patch file: %w", err)
@@ -284,22 +295,25 @@ func applyPatch(patch, targetFile string) (bool, error) {
 	}
 	tmpFile.Close()
 
-	cmd := exec.Command("git", "apply", "--check", tmpFile.Name())
-	out, err := cmd.CombinedOutput()
+	checkCmd := exec.Command("git", "apply", "--check", "-p1", tmpFile.Name())
+	checkCmd.Dir = repoRoot
+	out, err := checkCmd.CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("patch does not apply cleanly: %s", strings.TrimSpace(string(out)))
 	}
 
-	cmd = exec.Command("git", "apply", tmpFile.Name())
-	if out, err := cmd.CombinedOutput(); err != nil {
+	applyCmd := exec.Command("git", "apply", "-p1", tmpFile.Name())
+	applyCmd.Dir = repoRoot
+	if out, err := applyCmd.CombinedOutput(); err != nil {
 		return false, fmt.Errorf("applying patch: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
 	return true, nil
 }
 
-func commitFix(group Group) (string, error) {
+func commitFix(group Group, repoRoot string) (string, error) {
 	addCmd := exec.Command("git", "add", group.File)
+	addCmd.Dir = repoRoot
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("git add: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -315,6 +329,7 @@ func commitFix(group Group) (string, error) {
 	msg := fmt.Sprintf("fix(acig): %s", strings.Join(titles, ", "))
 
 	cmd := exec.Command("git", "commit", "-m", msg)
+	cmd.Dir = repoRoot
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("git commit: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -361,6 +376,24 @@ func readFileContent(path string) (string, error) {
 		content = content[:16000] + "\n... (truncated)"
 	}
 	return content, nil
+}
+
+func repoRootDir() (string, error) {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse --show-toplevel: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func isFixableFile(file string) bool {
+	if file == "" || file == "unknown" || file == "diff" {
+		return false
+	}
+	if strings.HasPrefix(file, "/dev/") {
+		return false
+	}
+	return true
 }
 
 func detectRepo() string {
