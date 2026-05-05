@@ -19,7 +19,7 @@ func init() {
 }
 
 func runSchema(cmd *cobra.Command, args []string) error {
-	b, err := verdict.VerdictSchema()
+	b, err := verdict.Schema()
 	if err != nil {
 		return fmt.Errorf("generating schema: %w", err)
 	}

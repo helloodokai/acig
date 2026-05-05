@@ -7,7 +7,7 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
-func VerdictSchema() ([]byte, error) {
+func Schema() ([]byte, error) {
 	s := jsonschema.Reflect(&Verdict{})
 	s.ID = "https://github.com/helloodokai/acig/schema/verdict.schema.json"
 	b, err := json.MarshalIndent(s, "", "  ")
@@ -18,7 +18,7 @@ func VerdictSchema() ([]byte, error) {
 }
 
 func WriteSchemaFile(path string) error {
-	b, err := VerdictSchema()
+	b, err := Schema()
 	if err != nil {
 		return err
 	}

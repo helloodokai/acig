@@ -56,8 +56,8 @@ func runCritic(
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return nil, fmt.Errorf("executing prompt template for %s: %w", criticID, err)
+	if execErr := tmpl.Execute(&buf, data); execErr != nil {
+		return nil, fmt.Errorf("executing prompt template for %s: %w", criticID, execErr)
 	}
 
 	req := models.ChatRequest{

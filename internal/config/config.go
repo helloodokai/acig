@@ -74,12 +74,12 @@ func Default() *Config {
 				"cloud": {
 					Cheap:    ModelRef{Provider: "ollama_cloud", Name: "gpt-oss:20b"},
 					Mid:      ModelRef{Provider: "ollama_cloud", Name: "qwen3-coder:480b"},
-					Frontier: ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-6"},
+					Frontier: ModelRef{Provider: "ollama_cloud", Name: "glm-5.1"},
 				},
 				"local": {
 					Cheap:    ModelRef{Provider: "ollama_local", Name: "qwen2.5-coder:7b", Host: "http://localhost:11434"},
 					Mid:      ModelRef{Provider: "ollama_local", Name: "qwen2.5-coder:32b", Host: "http://localhost:11434"},
-					Frontier: ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-6"},
+					Frontier: ModelRef{Provider: "ollama_cloud", Name: "glm-5.1"},
 				},
 			},
 			OllamaCloud: OllamaCloudConfig{

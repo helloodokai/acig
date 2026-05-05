@@ -8,7 +8,7 @@ fallback_to_local = true
 [models.profiles.cloud]
 cheap    = { provider = "ollama_cloud", name = "gpt-oss:20b" }
 mid      = { provider = "ollama_cloud", name = "qwen3-coder:480b" }
-frontier = { provider = "ollama_cloud", name = "glm-5.1:480b" }
+frontier = { provider = "ollama_cloud", name = "glm-5.1" }
 
 [models.profiles.local]
 cheap    = { provider = "ollama_local", name = "qwen2.5-coder:7b",  host = "http://localhost:11434" }

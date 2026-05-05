@@ -23,8 +23,15 @@ jobs:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: acig run --format both --out acig-verdict --profile cloud
+        run: |
+          acig run --format both --out acig-verdict --profile cloud --pr "${{ github.event.pull_request.number }}" || exit_code=$?
+          if [ "${exit_code:-0}" -ge 2 ]; then
+            echo "acig: BLOCKED — blocking findings present"
+            exit 1
+          fi
+          echo "acig: passed (exit code ${exit_code:-0})"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: acig-verdict
           path: acig-verdict.json

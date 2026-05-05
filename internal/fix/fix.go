@@ -24,13 +24,13 @@ import (
 //go:embed prompt_fix.md
 var fixPromptTmpl string
 
-type FixGroup struct {
+type Group struct {
 	File     string
 	Findings []verdict.Finding
 }
 
-type FixResult struct {
-	Group    FixGroup
+type Result struct {
+	Group    Group
 	Patch    string
 	Applied  bool
 	CommitSHA string
@@ -47,7 +47,7 @@ type Options struct {
 	BranchPrefix string
 }
 
-func Run(ctx context.Context, cfg *config.Config, opts Options) ([]FixResult, error) {
+func Run(ctx context.Context, cfg *config.Config, opts Options) ([]Result, error) {
 	if opts.MaxIter <= 0 {
 		opts.MaxIter = 10
 	}
@@ -97,7 +97,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]FixResult, er
 	}
 	slog.Info("created fix branch", "branch", branchName)
 
-	var results []FixResult
+	var results []Result
 	applied := 0
 
 	for i, group := range groups {
@@ -113,13 +113,13 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]FixResult, er
 		slog.Info("fixing group", "file", group.File, "findings", len(group.Findings), "iteration", i+1)
 		patch, err := generatePatch(ctx, cfg, router, ledger, group, d)
 		if err != nil {
-			results = append(results, FixResult{Group: group, Error: err.Error()})
+			results = append(results, Result{Group: group, Error: err.Error()})
 			continue
 		}
 
 		if opts.DryRun {
 			slog.Info("dry run: would apply patch", "file", group.File, "patch_len", len(patch))
-			results = append(results, FixResult{Group: group, Patch: patch})
+			results = append(results, Result{Group: group, Patch: patch})
 			continue
 		}
 
@@ -130,19 +130,19 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]FixResult, er
 				msg = err.Error()
 			}
 			slog.Warn("patch apply failed", "file", group.File, "error", msg)
-			results = append(results, FixResult{Group: group, Patch: patch, Error: msg})
+			results = append(results, Result{Group: group, Patch: patch, Error: msg})
 			continue
 		}
 
 		commitSHA, err := commitFix(group)
 		if err != nil {
 			slog.Warn("commit failed", "error", err)
-			results = append(results, FixResult{Group: group, Patch: patch, Error: err.Error()})
+			results = append(results, Result{Group: group, Patch: patch, Error: err.Error()})
 			continue
 		}
 
 		slog.Info("fix committed", "file", group.File, "sha", commitSHA)
-		results = append(results, FixResult{
+		results = append(results, Result{
 			Group:     group,
 			Patch:     patch,
 			Applied:   true,
@@ -162,7 +162,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]FixResult, er
 	return results, nil
 }
 
-func groupByFile(findings []verdict.Finding) []FixGroup {
+func groupByFile(findings []verdict.Finding) []Group {
 	groups := map[string][]verdict.Finding{}
 	for _, f := range findings {
 		file := f.File
@@ -172,12 +172,12 @@ func groupByFile(findings []verdict.Finding) []FixGroup {
 		groups[file] = append(groups[file], f)
 	}
 
-	var result []FixGroup
+	var result []Group
 	for file, fs := range groups {
 		sort.Slice(fs, func(i, j int) bool {
 			return fs[i].Severity > fs[j].Severity
 		})
-		result = append(result, FixGroup{File: file, Findings: fs})
+		result = append(result, Group{File: file, Findings: fs})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return len(result[i].Findings) > len(result[j].Findings)
@@ -185,7 +185,7 @@ func groupByFile(findings []verdict.Finding) []FixGroup {
 	return result
 }
 
-func generatePatch(ctx context.Context, cfg *config.Config, router *routing.Router, ledger *budget.Ledger, group FixGroup, d *diff.Diff) (string, error) {
+func generatePatch(ctx context.Context, cfg *config.Config, router *routing.Router, ledger *budget.Ledger, group Group, d *diff.Diff) (string, error) {
 	client, modelName, err := router.ClientForTier("frontier")
 	if err != nil {
 		return "", fmt.Errorf("getting frontier client: %w", err)
@@ -217,8 +217,8 @@ func generatePatch(ctx context.Context, cfg *config.Config, router *routing.Rout
 	}
 
 	var buf strings.Builder
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("executing fix template: %w", err)
+	if execErr := tmpl.Execute(&buf, data); execErr != nil {
+		return "", fmt.Errorf("executing fix template: %w", execErr)
 	}
 
 	start := ledger.Remaining()
@@ -278,9 +278,9 @@ func applyPatch(patch, targetFile string) (bool, error) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.WriteString(patch); err != nil {
+	if _, writeErr := tmpFile.WriteString(patch); writeErr != nil {
 		tmpFile.Close()
-		return false, fmt.Errorf("writing patch: %w", err)
+		return false, fmt.Errorf("writing patch: %w", writeErr)
 	}
 	tmpFile.Close()
 
@@ -298,7 +298,7 @@ func applyPatch(patch, targetFile string) (bool, error) {
 	return true, nil
 }
 
-func commitFix(group FixGroup) (string, error) {
+func commitFix(group Group) (string, error) {
 	addCmd := exec.Command("git", "add", group.File)
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("git add: %s: %w", strings.TrimSpace(string(out)), err)
@@ -332,8 +332,8 @@ func createBranch(name string) error {
 	if err != nil {
 		if strings.Contains(string(out), "already exists") {
 			cmd = exec.Command("git", "checkout", name)
-			if out2, err := cmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("checkout existing branch: %s: %w", strings.TrimSpace(string(out2)), err)
+			if out2, branchErr := cmd.CombinedOutput(); branchErr != nil {
+				return fmt.Errorf("checkout existing branch: %s: %w", strings.TrimSpace(string(out2)), branchErr)
 			}
 			return nil
 		}
@@ -379,7 +379,7 @@ func detectSHA() string {
 	return strings.TrimSpace(string(out))
 }
 
-func CreatePR(ctx context.Context, results []FixResult, opts Options) error {
+func CreatePR(ctx context.Context, results []Result, opts Options) error {
 	if len(results) == 0 {
 		return nil
 	}
@@ -398,7 +398,7 @@ func CreatePR(ctx context.Context, results []FixResult, opts Options) error {
 	branchName := fmt.Sprintf("%s/%s", opts.BranchPrefix, sha[:8])
 
 	var body strings.Builder
-	body.WriteString(fmt.Sprintf("## acig auto-fix\n\n"))
+	body.WriteString("## acig auto-fix\n\n")
 	body.WriteString(fmt.Sprintf("Fixes %d finding(s) across %d file(s).\n\n", applied, len(results)))
 	body.WriteString("| File | Findings | Status |\n|------|----------|--------|\n")
 	for _, r := range results {

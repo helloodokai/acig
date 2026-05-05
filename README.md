@@ -1,5 +1,7 @@
 # acig — Agentic CI Gateway
 
+<p align="center"><img src="acig-logo.png" alt="acig logo" width="200"></p>
+
 **Tiered code review via cheap critics + frontier adjudication.** `acig` sits in front of normal CI, fanning out lightweight "critic" models in parallel and escalating to a frontier model only when needed. It emits a machine-readable JSON verdict that coding agents (and humans) can consume.
 
 ---
@@ -219,7 +221,7 @@ fallback_to_local = true
 [models.profiles.cloud]
 cheap    = { provider = "ollama_cloud", name = "gpt-oss:20b" }
 mid      = { provider = "ollama_cloud", name = "qwen3-coder:480b" }
-frontier = { provider = "ollama_cloud", name = "glm-5.1:480b" }
+frontier = { provider = "ollama_cloud", name = "glm-5.1" }
 
 [models.profiles.local]
 cheap    = { provider = "ollama_local", name = "qwen2.5-coder:7b",  host = "http://localhost:11434" }
@@ -260,9 +262,9 @@ Ollama Cloud hosts large models that work well as frontier adjudicators and fix 
 
 ```toml
 [models.profiles.cloud]
-frontier = { provider = "ollama_cloud", name = "glm-5.1:480b" }
-# or:    frontier = { provider = "ollama_cloud", name = "kimi-k2.6:480b" }
-# or:    frontier = { provider = "ollama_cloud", name = "minimax-2.7:480b" }
+frontier = { provider = "ollama_cloud", name = "glm-5.1" }
+# or:    frontier = { provider = "ollama_cloud", name = "kimi-k2.6" }
+# or:    frontier = { provider = "ollama_cloud", name = "minimax-m2.7" }
 ```
 
 You can mix providers: Ollama Cloud for cheap/mid, OpenAI for frontier, or vice versa.
@@ -282,8 +284,7 @@ api_key = "sk-ant-..."              # or paste directly (add .acig.toml to .giti
 api_key = "${OLLAMA_API_KEY}"       # env var interpolation
 ```
 
-**Add `.acig.toml` to `.gitignore** if you put real keys in it — or use `${VAR}` interpolation to keep secrets out of the file.
-```
+**Add `.acig.toml` to `.gitignore`** if you put real keys in it — or use `${VAR}` interpolation to keep secrets out of the file.
 
 ---
 
@@ -349,7 +350,7 @@ Approximate cost and latency on a representative ~200-line diff (5 files changed
 |------|----------|-------|------|---------|
 | cheap | Ollama Cloud | `gpt-oss:20b` | ~$0.001 | 1-5s |
 | mid | Ollama Cloud | `qwen3-coder:480b` | ~$0.005 | 2-6s |
-| frontier | Ollama Cloud | `glm-5.1:480b` | ~$0.01 | 3-8s |
+| frontier | Ollama Cloud | `glm-5.1` | ~$0.01 | 3-8s |
 | frontier | OpenAI | `gpt-5-nano` | ~$0.05 | 1-3s |
 | cheap | Local Ollama | `qwen2.5-coder:7b` | $0 | 1-4s |
 | mid | Local Ollama | `qwen2.5-coder:32b` | $0 | 3-8s |
