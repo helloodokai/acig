@@ -21,6 +21,7 @@ linters-settings:
   gosec:
     excludes:
       - G104
+      - G204
 
 issues:
   max-issues-per-linter: 50

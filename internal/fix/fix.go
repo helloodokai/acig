@@ -24,13 +24,13 @@ import (
 //go:embed prompt_fix.md
 var fixPromptTmpl string
 
-type FixGroup struct {
+type Group struct {
 	File     string
 	Findings []verdict.Finding
 }
 
 type Result struct {
-	Group    FixGroup
+	Group    Group
 	Patch    string
 	Applied  bool
 	CommitSHA string
@@ -162,7 +162,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) ([]Result, error
 	return results, nil
 }
 
-func groupByFile(findings []verdict.Finding) []FixGroup {
+func groupByFile(findings []verdict.Finding) []Group {
 	groups := map[string][]verdict.Finding{}
 	for _, f := range findings {
 		file := f.File
@@ -172,12 +172,12 @@ func groupByFile(findings []verdict.Finding) []FixGroup {
 		groups[file] = append(groups[file], f)
 	}
 
-	var result []FixGroup
+	var result []Group
 	for file, fs := range groups {
 		sort.Slice(fs, func(i, j int) bool {
 			return fs[i].Severity > fs[j].Severity
 		})
-		result = append(result, FixGroup{File: file, Findings: fs})
+		result = append(result, Group{File: file, Findings: fs})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return len(result[i].Findings) > len(result[j].Findings)
@@ -185,7 +185,7 @@ func groupByFile(findings []verdict.Finding) []FixGroup {
 	return result
 }
 
-func generatePatch(ctx context.Context, cfg *config.Config, router *routing.Router, ledger *budget.Ledger, group FixGroup, d *diff.Diff) (string, error) {
+func generatePatch(ctx context.Context, cfg *config.Config, router *routing.Router, ledger *budget.Ledger, group Group, d *diff.Diff) (string, error) {
 	client, modelName, err := router.ClientForTier("frontier")
 	if err != nil {
 		return "", fmt.Errorf("getting frontier client: %w", err)
@@ -298,7 +298,7 @@ func applyPatch(patch, targetFile string) (bool, error) {
 	return true, nil
 }
 
-func commitFix(group FixGroup) (string, error) {
+func commitFix(group Group) (string, error) {
 	addCmd := exec.Command("git", "add", group.File)
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("git add: %s: %w", strings.TrimSpace(string(out)), err)
