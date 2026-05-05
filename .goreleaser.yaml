@@ -31,7 +31,7 @@ archives:
 homebrew_casks:
   - repository:
       owner: helloodokai
-      name: tap
+      name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Casks
     homepage: "https://github.com/helloodokai/acig"
