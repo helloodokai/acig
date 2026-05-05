@@ -10,6 +10,16 @@ import (
 
 func WriteMarkdown(v *verdict.Verdict, path string) error {
 	md := FormatMarkdown(v)
+
+	// Always print a short summary to stderr for terminal visibility
+	summary := fmt.Sprintf("\n🛡️ acig: %s | risk=%s | findings=%d | cost=$%.4f",
+		strings.ToUpper(string(v.Decision)), v.Risk, len(v.Findings), v.TotalCostUSD)
+	for _, f := range v.Findings {
+		summary += fmt.Sprintf("\n  [%s] %s — %s", strings.ToUpper(string(f.Severity)), f.Critic, f.Title)
+	}
+	summary += fmt.Sprintf("\n  full report: %s\n", path)
+	fmt.Fprintln(os.Stderr, summary)
+
 	if path == "" || path == "-" {
 		fmt.Println(md)
 		return nil
