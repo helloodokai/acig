@@ -170,7 +170,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if showUI && v.TotalDurationMS > 0 {
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(ui.Output(), "")
 	}
 
 	slog.Info("verdict", "decision", v.Decision, "risk", v.Risk, "findings", len(v.Findings), "cost_usd", fmt.Sprintf("%.4f", v.TotalCostUSD))
