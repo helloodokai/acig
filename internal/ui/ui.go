@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var output io.Writer = os.Stderr
+
 var (
 	bold   = color("\033[1m")
 	dim    = color("\033[2m")
@@ -101,10 +103,16 @@ func (p *Progress) Increment(label string) {
 	p.mu.Lock()
 	p.done++
 	cur := p.done
+	total := p.total
 	p.mu.Unlock()
 
+	if total <= 0 {
+		fmt.Fprintf(p.out, "  %s %s\n", green+"✓"+reset, label)
+		return
+	}
+
 	barWidth := 20
-	filled := barWidth * cur / p.total
+	filled := barWidth * cur / total
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
 	elapsed := time.Since(p.start).Seconds()
@@ -114,7 +122,7 @@ func (p *Progress) Increment(label string) {
 	}
 
 	fmt.Fprintf(p.out, "\r  %s %s%d/%d%s [%s] %s %.1fs  ",
-		status, bold, cur, p.total, reset, bar, label, elapsed,
+		status, bold, cur, total, reset, bar, label, elapsed,
 	)
 }
 
@@ -125,53 +133,53 @@ func (p *Progress) Done() {
 
 func PrintHeader(text string) {
 	width := 50
-	fmt.Fprintf(os.Stderr, "\n%s%s%s\n", bold+blue, "🛡️  acig", reset)
-	fmt.Fprintf(os.Stderr, "%s%s%s\n", dim, strings.Repeat("─", width), reset)
-	fmt.Fprintf(os.Stderr, "  %s\n\n", text)
+	fmt.Fprintf(output, "\n%s%s%s\n", bold+blue, "🛡️  acig", reset)
+	fmt.Fprintf(output, "%s%s%s\n", dim, strings.Repeat("─", width), reset)
+	fmt.Fprintf(output, "  %s\n\n", text)
 }
 
 func PrintStep(icon, text string) {
-	fmt.Fprintf(os.Stderr, "  %s %s\n", icon, text)
+	fmt.Fprintf(output, "  %s %s\n", icon, text)
 }
 
 func PrintStepf(icon, format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "  %s %s\n", icon, fmt.Sprintf(format, args...))
+	fmt.Fprintf(output, "  %s %s\n", icon, fmt.Sprintf(format, args...))
 }
 
 func PrintSuccess(text string) {
-	fmt.Fprintf(os.Stderr, "  %s%s %s%s\n", green+bold, "✓", text, reset)
+	fmt.Fprintf(output, "  %s%s %s%s\n", green+bold, "✓", text, reset)
 }
 
 func PrintWarning(text string) {
-	fmt.Fprintf(os.Stderr, "  %s%s %s%s\n", yellow+bold, "⚠", text, reset)
+	fmt.Fprintf(output, "  %s%s %s%s\n", yellow+bold, "⚠", text, reset)
 }
 
 func PrintError(text string) {
-	fmt.Fprintf(os.Stderr, "  %s%s %s%s\n", red+bold, "✗", text, reset)
+	fmt.Fprintf(output, "  %s%s %s%s\n", red+bold, "✗", text, reset)
 }
 
 func PrintVerdict(v VerdictSummary) {
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "%s%s──────────────────────────────────%s\n", dim, strings.Repeat("─", 34), reset)
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "%s%s──────────────────────────────────%s\n", dim, strings.Repeat("─", 34), reset)
 
 	switch v.Decision {
 	case "pass":
-		fmt.Fprintf(os.Stderr, "  %sPASS%s  ", green+bold, reset)
+		fmt.Fprintf(output, "  %sPASS%s  ", green+bold, reset)
 	case "warn":
-		fmt.Fprintf(os.Stderr, "  %sWARN%s  ", yellow+bold, reset)
+		fmt.Fprintf(output, "  %sWARN%s  ", yellow+bold, reset)
 	case "block":
-		fmt.Fprintf(os.Stderr, "  %sBLOCK%s ", red+bold, reset)
+		fmt.Fprintf(output, "  %sBLOCK%s ", red+bold, reset)
 	default:
-		fmt.Fprintf(os.Stderr, "  %s ", v.Decision)
+		fmt.Fprintf(output, "  %s ", v.Decision)
 	}
 
-	fmt.Fprintf(os.Stderr, "risk=%s  findings=%d  cost=$%.4f  duration=%.1fs",
+	fmt.Fprintf(output, "risk=%s  findings=%d  cost=$%.4f  duration=%.1fs",
 		v.RiskLevel, v.Findings, v.CostUSD, float64(v.DurationMS)/1000.0)
 	if v.Suppressions > 0 {
-		fmt.Fprintf(os.Stderr, "  suppressions=%d", v.Suppressions)
+		fmt.Fprintf(output, "  suppressions=%d", v.Suppressions)
 	}
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "%s%s──────────────────────────────────%s\n", dim, strings.Repeat("─", 34), reset)
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "%s%s──────────────────────────────────%s\n", dim, strings.Repeat("─", 34), reset)
 }
 
 type VerdictSummary struct {
@@ -188,7 +196,7 @@ func PrintFindings(findings []FindingDisplay) {
 		PrintSuccess("No findings. Code looks clean.")
 		return
 	}
-	fmt.Fprintf(os.Stderr, "\n%sFindings:%s\n", bold, reset)
+	fmt.Fprintf(output, "\n%sFindings:%s\n", bold, reset)
 	for i, f := range findings {
 		icon := severityIcon(f.Severity)
 		fileStr := ""
@@ -198,12 +206,12 @@ func PrintFindings(findings []FindingDisplay) {
 				fileStr = dim + " @ " + f.File + fmt.Sprintf(":%d", f.Line) + reset
 			}
 		}
-		fmt.Fprintf(os.Stderr, "  %s %d. %s%s%s %s[%s]%s\n", icon, i+1, bold, f.Title, reset, dim, f.Critic, reset)
+		fmt.Fprintf(output, "  %s %d. %s%s%s %s[%s]%s\n", icon, i+1, bold, f.Title, reset, dim, f.Critic, reset)
 		if fileStr != "" {
-			fmt.Fprintf(os.Stderr, "     %s\n", fileStr)
+			fmt.Fprintf(output, "     %s\n", fileStr)
 		}
 	}
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(output)
 }
 
 func severityIcon(sev string) string {
@@ -229,6 +237,10 @@ type FindingDisplay struct {
 	Title    string
 	File     string
 	Line     int
+}
+
+func Output() io.Writer {
+	return output
 }
 
 func ShouldShowUI() bool {
