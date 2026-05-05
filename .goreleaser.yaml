@@ -32,6 +32,7 @@ homebrew_casks:
   - repository:
       owner: helloodokai
       name: tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Casks
     homepage: "https://github.com/helloodokai/acig"
     description: "Agentic CI Gateway - tiered code review via cheap critics + frontier adjudication"
