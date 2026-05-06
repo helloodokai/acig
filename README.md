@@ -16,7 +16,7 @@ brew tap helloodokai/tap
 brew install acig
 
 # macOS / Linux (manual)
-VERSION="1.4.0"
+VERSION="1.4.1"
 curl -sL "https://github.com/helloodokai/acig/releases/download/v${VERSION}/checksums.txt" -o /tmp/checksums.txt
 curl -sL "https://github.com/helloodokai/acig/releases/download/v${VERSION}/acig_darwin_arm64.tar.gz" -o /tmp/acig.tar.gz
 EXPECTED=$(grep acig_darwin_arm64.tar.gz /tmp/checksums.txt | awk '{print $1}')
@@ -110,6 +110,23 @@ fi
 
 ## GitHub Actions Integration
 
+### GitHub App Setup (Recommended)
+
+Without a GitHub App, acig reviews appear as `github-actions[bot]`. To show reviews with the **ACIG** name and logo:
+
+1. **Create the app** — run `acig setup-app` to open a browser with permissions pre-configured, or create one manually at [GitHub Developer Settings](https://github.com/settings/apps/new) with:
+   - **Permissions**: Pull requests: Read & write, Checks: Read & write, Contents: Read-only
+   - **Events**: Pull request, Pull request review, Check run, Check suite
+   - Leave webhook URL and callback URL empty (not needed for CI-only apps)
+   - Upload the ACIG logo as the app icon
+2. **Generate a private key** — in the app settings → General → Private keys → Generate private key → download the `.pem` file
+3. **Install the app** on your repository — Settings → Install App → select repos. Note the **installation ID** from the URL (the number in `/installations/XXXXX`)
+4. **Add repository secrets** (Settings → Secrets and variables → Actions):
+   - `ACIG_APP_ID` — your App ID
+   - `ACIG_APP_PRIVATE_KEY` — contents of the `.pem` file
+
+### Workflow
+
 Add this workflow to `.github/workflows/acig.yml`:
 
 ```yaml
@@ -134,12 +151,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        if: ${{ secrets.ACIG_APP_ID != '' && secrets.ACIG_APP_PRIVATE_KEY != '' }}
+        with:
+          app-id: ${{ secrets.ACIG_APP_ID }}
+          private-key: ${{ secrets.ACIG_APP_PRIVATE_KEY }}
 
       - name: Install acig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ACIG_VERSION="1.4.0"
+          ACIG_VERSION="1.4.1"
           RELEASE_URL="https://github.com/helloodokai/acig/releases/download/v${ACIG_VERSION}"
           
           curl -sL "${RELEASE_URL}/checksums.txt" -o /tmp/checksums.txt
@@ -158,7 +185,7 @@ jobs:
 
       - name: Run acig
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -175,14 +202,17 @@ jobs:
           fi
 ```
 
+The workflow uses `actions/create-github-app-token` when `ACIG_APP_ID` and `ACIG_APP_PRIVATE_KEY` secrets are set. If they're not set, it falls back to `GITHUB_TOKEN` (reviews appear as `github-actions[bot]`).
+
 **Required secrets** (Settings → Secrets and variables → Actions):
 
 | Secret | Description |
 |--------|-------------|
+| `ACIG_APP_ID` | **Recommended.** Your GitHub App ID (reviews show as "ACIG" with custom logo) |
+| `ACIG_APP_PRIVATE_KEY` | **Recommended.** Private key from the app settings (.pem file contents) |
 | `OLLAMA_API_KEY` | **Required.** Get one at [ollama.com/settings/keys](https://ollama.com/settings/keys) |
 | `OPENAI_API_KEY` | Optional, for `openai/*` frontier models |
 | `ANTHROPIC_API_KEY` | Optional, for `anthropic/*` frontier models |
-| `GITHUB_TOKEN` | Auto-provided. Needs `pull-requests: write` and `checks: write` permissions |
 
 `acig` posts a **GitHub Pull Request Review** with inline comments on the relevant lines, plus an overall review summary. On re-runs, previous acig reviews are dismissed and replaced. Block verdicts result in `REQUEST_CHANGES`; pass/warn result in `COMMENT`. A **check run** named `acig` is also created.
 
@@ -195,6 +225,7 @@ jobs:
 | `acig run` | Run the critic pipeline on a diff |
 | `acig fix` | Auto-fix findings and create a PR |
 | `acig suppress` | Suppress findings from future runs |
+| `acig setup-app` | Create a GitHub App for ACIG reviews (one-click setup) |
 | `acig install-hook` | Install the acig pre-push hook |
 | `acig explain <verdict.json>` | Pretty-print a verdict for humans |
 | `acig doctor` | Check backends and API keys |

@@ -76,15 +76,21 @@ func (r *GitHubReporter) dismissOldReviews(ctx context.Context, owner, repo stri
 	}
 
 	for _, rev := range reviews {
-		if rev.Body != nil && strings.Contains(*rev.Body, acigMarker) {
-			slog.Info("dismissing old acig review", "id", rev.GetID())
-			if err := r.client.DeleteReviewComments(ctx, owner, repo, prNumber, rev.GetID()); err != nil {
-				slog.Warn("failed to delete old review comments", "error", err)
-			}
-			msg := "acig re-run: replacing with updated review"
-			if err := r.client.DismissReview(ctx, owner, repo, prNumber, rev.GetID(), msg); err != nil {
-				slog.Warn("failed to dismiss old review", "id", rev.GetID(), "error", err)
-			}
+		if rev.Body == nil || !strings.Contains(*rev.Body, acigMarker) {
+			continue
+		}
+		state := rev.GetState()
+		if state != "CHANGES_REQUESTED" && state != "APPROVED" {
+			slog.Info("skipping dismiss of non-dismissable review", "id", rev.GetID(), "state", state)
+			continue
+		}
+		slog.Info("dismissing old acig review", "id", rev.GetID(), "state", state)
+		if err := r.client.DeleteReviewComments(ctx, owner, repo, prNumber, rev.GetID()); err != nil {
+			slog.Warn("failed to delete old review comments", "error", err)
+		}
+		msg := "acig re-run: replacing with updated review"
+		if err := r.client.DismissReview(ctx, owner, repo, prNumber, rev.GetID(), msg); err != nil {
+			slog.Warn("failed to dismiss old review", "id", rev.GetID(), "error", err)
 		}
 	}
 	return nil
