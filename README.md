@@ -4,6 +4,8 @@
 
 **Tiered code review via cheap critics + frontier adjudication.** `acig` sits in front of normal CI, fanning out lightweight "critic" models in parallel and escalating to a frontier model only when needed. It emits a machine-readable JSON verdict that coding agents (and humans) can consume.
 
+<p align="center"><img src="acig-screenshot.png" alt="acig terminal output" width="600"></p>
+
 ---
 
 ## Quick Start
@@ -52,11 +54,11 @@ Output is JSON by default. Use `--format md` for a readable summary, or `--forma
 
 | Code | Meaning |
 |------|---------|
-| 0 | `pass` or `warn` — no blocking issues (non-blocking by default) |
-| 2 | `block` — blocking findings present |
+| 0 | `pass`, `warn`, or `block` with `[blocking] enabled = false` |
+| 2 | `warn` or `block` with `[blocking] enabled = true` (default) |
 | ≥10 | Tool error (config, network, etc.) |
 
-With `[blocking] enabled = true` in config, `warn` also exits 2. See [Blocking mode](#blocking-mode).
+By default, acig blocks on `warn` and `block` verdicts (exit 2). Set `[blocking] enabled = false` to make all verdicts non-blocking (exit 0). See [Blocking mode](#blocking-mode).
 
 ---
 
@@ -306,23 +308,19 @@ When multiple critics flag the same issue (e.g. both `risk_classifier` and `secu
 
 ## Blocking Mode
 
-By default, acig is **non-blocking**: `warn` and `pass` verdicts both exit 0. Only `block` exits 2. This lets you run acig locally and in CI without failing builds on warnings.
+By default, acig is **blocking**: `warn` and `block` verdicts exit 2. This means CI builds and pre-push hooks fail when issues are found.
 
-To make `warn` also block (exit 2), add to `.acig.toml`:
+To make acig non-blocking (all verdicts exit 0), add to `.acig.toml`:
 
 ```toml
 [blocking]
-enabled = true
+enabled = false
 ```
-
-Or pass `--blocking` on the command line (flag not yet available — use config).
 
 | Config | `pass` | `warn` | `block` |
 |--------|-------|-------|---------|
-| `blocking.enabled = false` (default) | exit 0 | exit 0 | exit 2 |
-| `blocking.enabled = true` | exit 0 | exit 2 | exit 2 |
-
-In CI, use exit code 2 to fail the build regardless of blocking mode.
+| `blocking.enabled = true` (default) | exit 0 | exit 2 | exit 2 |
+| `blocking.enabled = false` | exit 0 | exit 0 | exit 0 |
 
 ---
 
