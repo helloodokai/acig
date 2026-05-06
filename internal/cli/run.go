@@ -319,7 +319,8 @@ func reportToGitHub(ctx context.Context, cfg *config.Config, v *verdict.Verdict,
 		return fmt.Errorf("detecting PR number: %w", err)
 	}
 
-	client := githubclient.NewClient(os.Getenv("GITHUB_TOKEN"))
+	token := os.Getenv("GITHUB_TOKEN")
+	client := githubclient.NewClient(token)
 	reporter := reporters.NewGitHubReporter(client, sha)
 	return reporter.Report(ctx, v, owner, name, prNumber)
 }

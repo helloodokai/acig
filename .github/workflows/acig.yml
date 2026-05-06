@@ -10,20 +10,30 @@ jobs:
       contents: read
       pull-requests: write
       checks: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Get GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        if: ${{ secrets.ACIG_APP_ID != '' && secrets.ACIG_APP_PRIVATE_KEY != '' }}
+        with:
+          app-id: ${{ secrets.ACIG_APP_ID }}
+          private-key: ${{ secrets.ACIG_APP_PRIVATE_KEY }}
+
       - name: Install acig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ACIG_VERSION="1.3.0"
+          ACIG_VERSION="1.4.1"
           RELEASE_URL="https://github.com/helloodokai/acig/releases/download/v${ACIG_VERSION}"
-          
+
           curl -sL "${RELEASE_URL}/checksums.txt" -o /tmp/checksums.txt
           curl -sL "${RELEASE_URL}/acig_linux_amd64.tar.gz" -o /tmp/acig_linux_amd64.tar.gz
-          
+
           cd /tmp
           EXPECTED=$(grep acig_linux_amd64.tar.gz checksums.txt | awk '{print $1}')
           ACTUAL=$(sha256sum acig_linux_amd64.tar.gz | awk '{print $1}')
@@ -31,20 +41,22 @@ jobs:
             echo "::error::checksum mismatch: expected $EXPECTED got $ACTUAL"
             exit 1
           fi
-          
+
           tar xz -f acig_linux_amd64.tar.gz -C /usr/local/bin acig
+
       - name: Run acig
         env:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
         run: |
-          acig run --format both --out acig-verdict --profile cloud --pr "${{ github.event.pull_request.number }}" || exit_code=$?
+          acig run --format both --out acig-verdict --profile cloud --pr "${{ github.event.pull_request.number }}" --sha "${{ github.event.pull_request.head.sha }}" || exit_code=$?
           if [ "${exit_code:-0}" -ge 2 ]; then
             echo "acig: BLOCKED — blocking findings present"
             exit 1
           fi
           echo "acig: passed (exit code ${exit_code:-0})"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
