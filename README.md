@@ -1,6 +1,6 @@
-# acig — Agentic CI Gateway
-
 <p align="center"><img src="acig-logo.png" alt="acig logo" width="200"></p>
+
+<h1 align="center">acig — Agentic CI Gateway</h1>
 
 **Tiered code review via cheap critics + frontier adjudication.** `acig` sits in front of normal CI, fanning out lightweight "critic" models in parallel and escalating to a frontier model only when needed. It emits a machine-readable JSON verdict that coding agents (and humans) can consume.
 
