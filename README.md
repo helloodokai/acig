@@ -11,21 +11,20 @@
 ### 1. Install
 
 ```bash
-# macOS / Linux (arm64)
-curl -sSL https://github.com/helloodokai/acig/releases/latest/download/acig_darwin_arm64.tar.gz \
-  | tar -xz -C /usr/local/bin acig
-
-# Linux (amd64)
-curl -sSL https://github.com/helloodokai/acig/releases/latest/download/acig_linux_amd64.tar.gz \
-  | tar -xz -C /usr/local/bin acig
-
-# Homebrew
+# macOS (Homebrew — recommended)
 brew tap helloodokai/tap
 brew install acig
 
-# Or build from source:
-git clone https://github.com/helloodokai/acig.git
-cd acig && make build && cp dist/acig /usr/local/bin/
+# macOS / Linux (manual)
+VERSION="1.4.0"
+curl -sL "https://github.com/helloodokai/acig/releases/download/v${VERSION}/checksums.txt" -o /tmp/checksums.txt
+curl -sL "https://github.com/helloodokai/acig/releases/download/v${VERSION}/acig_darwin_arm64.tar.gz" -o /tmp/acig.tar.gz
+EXPECTED=$(grep acig_darwin_arm64.tar.gz /tmp/checksums.txt | awk '{print $1}')
+ACTUAL=$(sha256sum /tmp/acig.tar.gz | awk '{print $1}')
+[ "$EXPECTED" = "$ACTUAL" ] || { echo "checksum mismatch"; exit 1; }
+tar xzf /tmp/acig.tar.gz -C /usr/local/bin acig
+
+# Linux (amd64) — same pattern, swap acig_linux_amd64.tar.gz
 ```
 
 ### 2. Set your API key
@@ -53,10 +52,34 @@ Output is JSON by default. Use `--format md` for a readable summary, or `--forma
 
 | Code | Meaning |
 |------|---------|
-| 0 | `pass` — no issues |
-| 1 | `warn` — findings but none blocking |
+| 0 | `pass` or `warn` — no blocking issues (non-blocking by default) |
 | 2 | `block` — blocking findings present |
 | ≥10 | Tool error (config, network, etc.) |
+
+With `[blocking] enabled = true` in config, `warn` also exits 2. See [Blocking mode](#blocking-mode).
+
+---
+
+## Interactive UI
+
+When running in a terminal, acig shows a live progress UI:
+
+```
+🛡️  acig
+──────────────────────────────────────────────────
+  Reviewing origin/main..HEAD — 8 file(s) changed, +426/-11 lines
+
+  ⏳ Running critics...
+  ✓ 6/6 [████████████████████] security_smell 13.7s
+
+──────────────────────────────────────────────────
+  PASS   risk=low  findings=0  cost=$0.0006  duration=13.8s
+──────────────────────────────────────────────────
+
+  ✓ No findings. Code looks clean.
+```
+
+In CI (`GITHUB_ACTIONS=true`) or with `NO_COLOR=1`, acig falls back to structured `slog` JSON output for machine parsing.
 
 ---
 
@@ -68,22 +91,18 @@ Install a git hook that runs acig before every push:
 acig install-hook
 ```
 
-This writes `.git/hooks/pre-push` that:
-- Runs `acig run --format md --profile cloud` on the commits about to be pushed
-- Blocks the push if the verdict is `block`
-- Respects `ACIG_SKIP=1` env var to bypass (with a logged warning)
-
-**If you already have a pre-push hook**, add this snippet to it:
+This writes `.git/hooks/pre-push` that runs acig and blocks the push on `block` verdicts. Example hook:
 
 ```bash
-# Run acig pre-push check
-if [ "$ACIG_SKIP" != "1" ]; then
-  acig run --format md --profile cloud
-  ACIG_EXIT=$?
-  if [ $ACIG_EXIT -eq 2 ]; then
-    echo "acig: BLOCKED — push rejected. Fix issues or set ACIG_SKIP=1."
-    exit 1
-  fi
+ACIG="/opt/homebrew/bin/acig"
+
+"$ACIG" run --profile cloud --format md --diff "origin/main..HEAD" --out /tmp/acig-pre-push
+ACIG_EXIT=$?
+if [ $ACIG_EXIT -eq 2 ]; then
+  echo "🚫 acig: blocked — push aborted"
+  exit 1
+elif [ $ACIG_EXIT -eq 1 ]; then
+  echo "⚠️  acig: warnings found"
 fi
 ```
 
@@ -91,59 +110,81 @@ fi
 
 ## GitHub Actions Integration
 
-Add this workflow to your repo at `.github/workflows/acig.yml`:
+Add this workflow to `.github/workflows/acig.yml`:
 
 ```yaml
-name: Acig
+name: acig
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: acig-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
 
 jobs:
-  acig:
+  review:
+    name: acig review
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      checks: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+
       - name: Install acig
-        run: |
-          curl -sSL https://github.com/helloodokai/acig/releases/latest/download/acig_linux_amd64.tar.gz \
-            | tar -xz -C /usr/local/bin acig
-      - name: Run acig
         env:
-          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          charter_conformance="${CHARTER_PATH:-}"
-          if [ -n "$charter_conformance" ]; then
-            CHARTER_FLAGS="--charter $charter_conformance"
+          ACIG_VERSION="1.4.0"
+          RELEASE_URL="https://github.com/helloodokai/acig/releases/download/v${ACIG_VERSION}"
+          
+          curl -sL "${RELEASE_URL}/checksums.txt" -o /tmp/checksums.txt
+          curl -sL "${RELEASE_URL}/acig_linux_amd64.tar.gz" -o /tmp/acig_linux_amd64.tar.gz
+          
+          cd /tmp
+          EXPECTED=$(grep acig_linux_amd64.tar.gz checksums.txt | awk '{print $1}')
+          ACTUAL=$(sha256sum acig_linux_amd64.tar.gz | awk '{print $1}')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::checksum mismatch: expected $EXPECTED got $ACTUAL"
+            exit 1
           fi
-          acig run --format both --out acig-verdict --profile cloud $CHARTER_FLAGS
-      - uses: actions/upload-artifact@v4
-        with:
-          name: acig-verdict
-          path: acig-verdict.json
+          
+          tar xz -f acig_linux_amd64.tar.gz -C /usr/local/bin acig
+          chmod +x /usr/local/bin/acig
+
+      - name: Run acig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          acig run --pr ${{ github.event.pull_request.number }} --sha ${{ github.event.pull_request.head.sha }} --format both --out /tmp/acig-review
+          EXIT_CODE=$?
+          if [ "$EXIT_CODE" -ge 2 ]; then
+            echo "::error::acig blocked this PR"
+            exit 1
+          elif [ "$EXIT_CODE" -eq 1 ]; then
+            echo "::warning::acig found warnings"
+          else
+            echo "::notice::acig passed"
+          fi
 ```
 
-**Add these secrets to your repo** (Settings → Secrets and variables → Actions):
+**Required secrets** (Settings → Secrets and variables → Actions):
 
-| Secret | Required | Description |
-|--------|----------|-------------|
-| `OLLAMA_API_KEY` | **Yes** | Get one at [ollama.com/settings/keys](https://ollama.com/settings/keys) |
-| `ANTHROPIC_API_KEY` | No | For frontier adjudicator on high-risk diffs |
-| `GITHUB_TOKEN` | Auto | Needs `pull-requests: write` and `checks: write` permissions |
+| Secret | Description |
+|--------|-------------|
+| `OLLAMA_API_KEY` | **Required.** Get one at [ollama.com/settings/keys](https://ollama.com/settings/keys) |
+| `OPENAI_API_KEY` | Optional, for `openai/*` frontier models |
+| `ANTHROPIC_API_KEY` | Optional, for `anthropic/*` frontier models |
+| `GITHUB_TOKEN` | Auto-provided. Needs `pull-requests: write` and `checks: write` permissions |
 
 `acig` posts a **GitHub Pull Request Review** with inline comments on the relevant lines, plus an overall review summary. On re-runs, previous acig reviews are dismissed and replaced. Block verdicts result in `REQUEST_CHANGES`; pass/warn result in `COMMENT`. A **check run** named `acig` is also created.
-
-### Finding deduplication
-
-When multiple critics flag the same issue (e.g. both `risk_classifier` and `security_smell` report a hardcoded secret in the same file), acig deduplicates findings by matching on severity + file + normalized title + detail prefix. Only the first finding is kept, avoiding noise in the review.
 
 ---
 
@@ -153,9 +194,10 @@ When multiple critics flag the same issue (e.g. both `risk_classifier` and `secu
 |---------|-------------|
 | `acig run` | Run the critic pipeline on a diff |
 | `acig fix` | Auto-fix findings and create a PR |
+| `acig suppress` | Suppress findings from future runs |
 | `acig install-hook` | Install the acig pre-push hook |
 | `acig explain <verdict.json>` | Pretty-print a verdict for humans |
-| `acig doctor` | Check that backends are reachable and API keys are set |
+| `acig doctor` | Check backends and API keys |
 | `acig schema` | Print the Verdict JSON schema |
 
 ### `acig run` flags
@@ -164,12 +206,14 @@ When multiple critics flag the same issue (e.g. both `risk_classifier` and `secu
 |------|---------|-------------|
 | `--diff` | auto-detect | Git diff range (e.g. `HEAD~3..HEAD`) |
 | `--pr` | — | GitHub PR number or URL to review |
+| `--sha` | auto-detect | Commit SHA for check runs |
 | `--config` | `.acig.toml` | Config file path |
 | `--format` | `json` | Output format: `json`, `md`, `both` |
-| `--out` | stdout | Output file base path (extensions added automatically) |
+| `--out` | stdout | Output file base path (extensions added) |
 | `--budget` | from config | Per-run budget in USD |
 | `--profile` | from config | `cloud` or `local` |
 | `--charter` | — | Path to charter.yaml for conformance checking |
+| `--suppress` | `.acig-suppressions.toml` | Path to suppressions file |
 
 ### `acig fix` flags
 
@@ -185,34 +229,69 @@ When multiple critics flag the same issue (e.g. both `risk_classifier` and `secu
 | `--max-iterations` | 10 | Maximum number of fix iterations |
 | `--branch-prefix` | `acig-fix` | Prefix for the fix branch name |
 
-### Reviewing a PR (`--pr`)
+### `acig suppress` — managing suppressed findings
 
-Point acig at any GitHub PR without checking out the branch:
-
-```bash
-acig run --pr 42                          # by PR number
-acig run --pr https://github.com/owner/repo/pull/42  # by URL
-acig fix --pr 42 --dry-run                # preview fixes for a PR
-```
-
-Requires `gh` CLI with repo access.
-
-### Auto-Fix (`acig fix`)
-
-`acig fix` runs the critic pipeline, then uses the frontier model to generate unified diffs that address each finding. It creates one commit per file, pushes a branch, and opens a PR with `gh`:
+Suppress persistent findings you've already reviewed so they don't appear in future runs:
 
 ```bash
-# Auto-fix all findings on current branch, push and create PR
-acig fix --profile cloud
+# List findings from last run with indices
+acig suppress
 
-# Dry-run: show patches without applying
-acig fix --dry-run
+# Suppress specific findings by index
+acig suppress 0 3 7
 
-# Fix specific range without pushing
-acig fix --diff HEAD~3..HEAD --no-push
+# Suppress all findings from last run
+acig suppress --all --reason "acceptable tech debt"
+
+# List current suppressions
+acig suppress --list
 ```
 
-Each commit message references the finding titles (e.g. `fix(acig): missing error handling, SQL injection in auth`). The PR body includes a table of all fixes with per-file status.
+Suppressions are stored in `.acig-suppressions.toml` (add it to `.gitignore` or commit it for team-wide suppressions):
+
+```toml
+[[suppression]]
+critic = "style_conformance"
+title = "Missing doc comment"
+file = "internal/handler.go"
+reason = "internal package, no public API"
+
+[[suppression]]
+critic = "security_smell"
+title = "Hardcoded secret"
+reason = "test env var"
+expires = "2026-12-31"
+```
+
+Expired suppressions are automatically ignored. Matches work on `critic`, `title`, and `file` — omit a field to match broadly.
+
+---
+
+## Finding Deduplication
+
+When multiple critics flag the same issue (e.g. both `risk_classifier` and `security_smell` report a hardcoded secret in the same file), acig deduplicates findings by matching on severity + file + normalized title + detail prefix. Only the first finding is kept, avoiding noise in the review.
+
+---
+
+## Blocking Mode
+
+By default, acig is **non-blocking**: `warn` and `pass` verdicts both exit 0. Only `block` exits 2. This lets you run acig locally and in CI without failing builds on warnings.
+
+To make `warn` also block (exit 2), add to `.acig.toml`:
+
+```toml
+[blocking]
+enabled = true
+```
+
+Or pass `--blocking` on the command line (flag not yet available — use config).
+
+| Config | `pass` | `warn` | `block` |
+|--------|-------|-------|---------|
+| `blocking.enabled = false` (default) | exit 0 | exit 0 | exit 2 |
+| `blocking.enabled = true` | exit 0 | exit 2 | exit 2 |
+
+In CI, use exit code 2 to fail the build regardless of blocking mode.
 
 ---
 
@@ -254,21 +333,25 @@ enabled = ["risk_classifier", "style_conformance", "test_coverage_smell", "secur
 [critics.adjudicator]
 trigger_on = ["risk:high", "risk:critical", "conflict"]
 
+[blocking]
+enabled = false
+
 [paths]
 critical = ["src/auth/**", "src/payments/**", "migrations/**"]
 
 [charter]
-path = ".charters/ch-2026-05-04-abc123.yaml"   # optional: path to a charter file for conformance checking
-auto = true                                      # optional: auto-detect from PR body "Charter:" trailer
+path = ".charters/ch-2026-05-04-abc123.yaml"   # path to a charter file (not the directory)
+auto = true                                        # auto-detect from PR body "Charter:" trailer
 ```
 
 **Key options:**
 - `budget.per_run_usd` — maximum spend per `acig run` invocation (default: $0.25)
 - `models.default_profile` — `cloud` or `local`
 - `models.fallback_to_local` — if Ollama Cloud fails, fall back to local Ollama
-- `critics.enabled` — which critics to run (add `charter_conformance` when using charters)
+- `critics.enabled` — which critics to run (do NOT include `charter_conformance` here; it's auto-added when `[charter]` is configured)
 - `critics.adjudicator.trigger_on` — when to run the frontier adjudicator
-- `charter.path` — path to a charter.yaml for conformance checking
+- `blocking.enabled` — make `warn` verdict exit 2 instead of 0 (default: false)
+- `charter.path` — path to a charter.yaml file for conformance checking (must be a file, not a directory)
 - `charter.auto` — auto-detect charter from PR body `Charter:` trailer
 - `paths.critical` — glob patterns; changes here auto-bump risk to `high`
 
@@ -313,10 +396,10 @@ api_key = "${OLLAMA_API_KEY}"       # env var interpolation
 | `test_coverage_smell` | cheap | Missing tests for new logic, untested error paths |
 | `security_smell` | mid | SQL injection, XSS, hardcoded secrets, auth issues |
 | `perf_smell` | mid | N+1 queries, unbounded allocations, missing timeouts |
-| `charter_conformance` | cheap | Checks diff against a charter.yaml (optional, requires `charter`) |
+| `charter_conformance` | cheap | Checks diff against a charter.yaml (auto-added when `[charter]` is configured) |
 | `adjudicator` | frontier | Resolves conflicts between critics; adds missed findings |
 
-The **risk_classifier** always runs first and synchronously. Its output determines which other critics are needed. Low-risk diffs skip the expensive adjudicator entirely.
+All critics (including `risk_classifier`) now run **in parallel** for minimum latency. The adjudicator runs only when triggered. `charter_conformance` is auto-added by the `[charter]` config section — don't add it to `critics.enabled` or it will run twice.
 
 ---
 
@@ -359,18 +442,15 @@ brew tap helloodokai/charter-tap
 brew install charter
 ```
 
-2. Reference a charter in your acig run:
-
-```bash
-acig run --charter .charters/ch-2026-05-04-abc123.yaml
-```
-
-Or set it in `.acig.toml`:
+2. Reference a charter in your acig config:
 
 ```toml
 [charter]
-path = ".charters/ch-2026-05-04-abc123.yaml"
+path = ".charters/ch-2026-05-04-abc123.yaml"   # must be a file, not a directory
+auto = true
 ```
+
+Or via flag: `acig run --charter .charters/ch-2026-05-04-abc123.yaml`
 
 3. Or add a `Charter:` trailer to your PR body:
 
@@ -378,20 +458,10 @@ path = ".charters/ch-2026-05-04-abc123.yaml"
 Charter: .charters/ch-2026-05-04-abc123.yaml
 ```
 
-### What it checks
+### Important
 
-When a charter is referenced, the `charter_conformance` critic runs `charter conformance` against the diff and surfaces findings for:
-
-- **Blast radius violations** — files changed outside the charter's declared scope
-- **Non-goal violations** — changes touching areas the charter explicitly excluded
-- **Blocking unknowns** — unresolved blocking questions that prevent merge
-- **Acceptance criteria gaps** — criteria the diff doesn't address
-
-Findings are merged into the acig verdict like any other critic output, so they influence the final decision and risk level.
-
-### When there's no charter
-
-The `charter_conformance` critic is **opt-in only**. If no charter is referenced (no `--charter` flag, no `[charter]` config, no `Charter:` trailer), the critic silently skips. Charter is not required for acig to work — it's an enhancement for teams that want stronger spec enforcement.
+- `charter.path` must point to a **specific `.yaml file**, not a directory. If you set it to a directory, the charter binary will fail with `read .charters: is a directory`.
+- Don't add `charter_conformance` to `critics.enabled` — it's automatically added when `[charter]` is configured. Adding it manually causes it to run twice.
 
 ---
 
@@ -399,12 +469,13 @@ The `charter_conformance` critic is **opt-in only**. If no charter is referenced
 
 If you are a coding agent reading this, here's what you need:
 
-1. **Read the verdict JSON.** It's the single source of truth. Find the `acig-verdict.json` artifact or look for the `<details>` block in the PR comment.
-2. **`decision` tells you the gate.** `"pass"` → you're done. `"warn"` → optional fixes. `"block"` → you must address findings before merge.
+1. **Read the verdict JSON.** It's the single source of truth. Find the `acig-last-verdict.json` or the `<details>` block in the PR comment.
+2. **`decision` tells you the gate.** `"pass"` → you're done. `"warn"` → optional fixes (non-blocking by default). `"block"` → you must address findings before merge.
 3. **Each `finding` has a `severity`, `file`, `line_start`, and `suggested_fix`.** Use these to target your edits.
 4. **`critic_results` shows which models ran and what they cost.** The `adjudicator` critic is authoritative when present.
-5. **Validate against the schema** (`acig schema`) before relying on fields. New fields may be added; existing fields will not be removed or renamed within a `schema_version`.
+5. **Suppress false positives** with `acig suppress <index>` or `acig suppress --all --reason "why"`.
 6. **Budget is tracked.** If `budget_remaining_usd <= 0`, some critics were skipped. Re-run with a higher budget if needed.
+7. **Validate against the schema** (`acig schema`) before relying on fields. New fields may be added; existing fields will not be removed or renamed within a `schema_version`.
 
 ---
 
@@ -423,9 +494,7 @@ Approximate cost and latency on a representative ~200-line diff (5 files changed
 | | **Full pipeline (cloud)** | | **~$0.002** | **10-50s** |
 | | **Full pipeline (local)** | | **$0** | **8-30s** |
 
-*Latency varies by diff size, network, and model load. These are observed averages.*
-
-A full cloud run on a typical diff costs well under $0.01 — ~40x cheaper than running a single frontier model on the same input.
+*Latency varies by diff size, network, and model load. All critics run in parallel (concurrency 8).*
 
 ---
 
@@ -437,30 +506,31 @@ A full cloud run on a typical diff costs well under $0.01 — ~40x cheaper than 
 └─────┬───────┘                                    └─────┬───────┘
       │                                                  │
       ▼                                                  ▼
-┌──────────────────┐     cheap tier              ┌─────────────────┐
-│  risk_classifier │◄──────────── Ollama Cloud  │  Run pipeline    │
+┌──────────────────┐     cheap/mid tier           ┌─────────────────┐
+│  risk_classifier │◄──────────── Ollama Cloud    │  Run pipeline    │
 └─────┬────────────┘                           │  (same as run)   │
-      │ risk = low/medium/high/critical         └────────┬────────┘
+      │ risk = low/medium/high/critical         └────────┬──────────┘
       ▼                                                   │
 ┌──────────────────────────────────────────────┐          │
-│                 Fan-out (4 concurrent)       │          ▼
-│                                              │   ┌─────────────────┐
-│  style  ─────────► cheap  ──► Cloud          │   │  Group findings │
-│  tests  ─────────► cheap  ──► Cloud          │   │  by file        │
-│  security ───────► mid    ──► Cloud          │   └────────┬────────┘
-│  perf   ─────────► mid    ──► Cloud          │            │
-└──────────────────────┬───────────────────────┘            ▼
-                       │                          ┌─────────────────┐
-                       ▼                          │  Frontier model  │
-              ┌────────────────┐                 │  generates diff │
-              │  adjudicator   │◄── frontier ──► │  per file      │
-              └────────────────┘                 └────────┬────────┘
-                       │                                   │
-                       ▼                                   ▼
-              ┌────────────────┐                 ┌─────────────────┐
-              │  Verdict JSON  │──► stdout/file   │  git apply +    │
-              └────────────────┘   / GitHub       │  commit + PR    │
-                                                   └─────────────────┘
+│           Fan-out (8 concurrent)            │          ▼
+│                                             │   ┌─────────────────┐
+│  style  ─────────► cheap  ──► Cloud        │   │  Group findings │
+│  tests  ─────────► cheap  ──► Cloud        │   │  by file        │
+│  security ───────► mid    ──► Cloud        │   └────────┬────────┘
+│  perf   ─────────► mid    ──► Cloud        │            │
+│  charter ─────────► cheap  ──► Cloud        │            ▼
+└──────────────────────┬───────────────────────┘   ┌─────────────────┐
+                       │                             │  Frontier model  │
+                       ▼                             │  generates diff │
+              ┌────────────────┐                     │  per file       │
+              │  adjudicator   │◄── frontier ────────► │                 │
+              └────────────────┘                     └────────┬────────┘
+                       │                                      │
+                       ▼                                      ▼
+              ┌────────────────┐                      ┌─────────────────┐
+              │  Verdict JSON  │──► suppress ──► JSON   │  git apply +    │
+              └────────────────┘   / GitHub           │  commit + PR    │
+                                                          └─────────────────┘
 ```
 
 ---
@@ -470,13 +540,11 @@ A full cloud run on a typical diff costs well under $0.01 — ~40x cheaper than 
 ```bash
 git clone https://github.com/helloodokai/acig.git
 cd acig
-make build              # builds to dist/acig
-make test               # runs tests
-make lint               # golangci-lint
-make release-snapshot   # goreleaser snapshot
+go build -o /usr/local/bin/acig ./cmd/acig/main.go     # build
+go test ./... -race                                       # test with race detector
 ```
 
-Requires Go 1.24+, golangci-lint, and goreleaser.
+Requires Go 1.24+.
 
 ## License
 
