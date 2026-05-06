@@ -110,6 +110,9 @@ func Default() *Config {
 				TriggerOn: []string{"risk:high", "risk:critical", "conflict"},
 			},
 		},
+		Blocking: BlockingConfig{
+			Enabled: true,
+		},
 	}
 }
 

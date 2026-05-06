@@ -58,7 +58,10 @@ func exitCodeForDecision(decision string, blocking bool) int {
 		}
 		return 0
 	case "block":
-		return 2
+		if blocking {
+			return 2
+		}
+		return 0
 	default:
 		return 0
 	}
