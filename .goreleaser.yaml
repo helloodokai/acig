@@ -28,21 +28,24 @@ archives:
       - goos: windows
         formats: [zip]
 
-homebrew_casks:
-  - repository:
-      owner: helloodokai
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Casks
-    homepage: "https://github.com/helloodokai/acig"
-    description: "Agentic CI Gateway - tiered code review via cheap critics + frontier adjudication"
-    binaries: [acig]
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/acig"]
-          end
+# homebrew_casks disabled — manually update helloodokai/homebrew-tap after each release
+# (HOMEBREW_TAP_GITHUB_TOKEN 401 issue; see docs for manual cask update steps)
+#
+# homebrew_casks:
+#   - repository:
+#       owner: helloodokai
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+#     directory: Casks
+#     homepage: "https://github.com/helloodokai/acig"
+#     description: "Agentic CI Gateway - tiered code review via cheap critics + frontier adjudication"
+#     binaries: [acig]
+#     hooks:
+#       post:
+#         install: |
+#           if OS.mac?
+#             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/acig"]
+#           end
 
 checksum:
   name_template: "checksums.txt"
