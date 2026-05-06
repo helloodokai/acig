@@ -46,12 +46,15 @@ func Execute() {
 	}
 }
 
-func exitCodeForDecision(decision string) int {
+func exitCodeForDecision(decision string, blocking bool) int {
 	switch decision {
 	case "pass":
 		return 0
 	case "warn":
-		return 1
+		if blocking {
+			return 2
+		}
+		return 0
 	case "block":
 		return 2
 	default:

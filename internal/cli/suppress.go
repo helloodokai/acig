@@ -153,15 +153,12 @@ func lastVerdictPath() string {
 		if !strings.HasSuffix(p, ".json") {
 			p += ".json"
 		}
-		return p
-	}
-	for _, candidate := range []string{
-		"/tmp/acig-pre-push.json",
-		"/tmp/acig-review.json",
-	} {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
+		if _, err := os.Stat(p); err == nil {
+			return p
 		}
 	}
-	return "/tmp/acig-review.json"
+	if _, err := os.Stat(lastVerdictFile); err == nil {
+		return lastVerdictFile
+	}
+	return lastVerdictFile
 }
