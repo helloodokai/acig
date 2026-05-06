@@ -112,24 +112,9 @@ fi
 
 ## GitHub Actions Integration
 
-### GitHub App Setup (Recommended)
+### GitHub Action (Recommended)
 
-Without a GitHub App, acig reviews appear as `github-actions[bot]`. To show reviews with the **ACIG** name and logo:
-
-1. **Create the app** — run `acig setup-app` to configure secrets interactively, or create one manually at [GitHub Developer Settings](https://github.com/settings/apps/new) with:
-   - **Permissions**: Pull requests: Read & write, Checks: Read & write, Contents: Read-only
-   - **Events**: Pull request, Pull request review, Check run, Check suite
-   - Leave webhook URL and callback URL empty (not needed for CI-only apps)
-   - Upload the ACIG logo as the app icon
-2. **Generate a private key** — in the app settings → General → Private keys → Generate private key → download the `.pem` file
-3. **Install the app** on your repository — Settings → Install App → select repos
-4. **Add repository secrets** (Settings → Secrets and variables → Actions):
-   - `ACIG_APP_ID` — your App ID (shown on the app settings page)
-   - `ACIG_APP_PRIVATE_KEY` — the full contents of the `.pem` file (not the file path)
-
-### Workflow
-
-Add this workflow to `.github/workflows/acig.yml`:
+Use the official ACIG GitHub Action — one line in your workflow, no copy-paste:
 
 ```yaml
 name: acig
@@ -149,7 +134,6 @@ permissions:
 
 jobs:
   review:
-    name: acig review
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -164,47 +148,24 @@ jobs:
           app-id: ${{ secrets.ACIG_APP_ID }}
           private-key: ${{ secrets.ACIG_APP_PRIVATE_KEY }}
 
-      - name: Install acig
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ACIG_VERSION="1.4.1"
-          RELEASE_URL="https://github.com/helloodokai/acig/releases/download/v${ACIG_VERSION}"
-          
-          curl -sL "${RELEASE_URL}/checksums.txt" -o /tmp/checksums.txt
-          curl -sL "${RELEASE_URL}/acig_linux_amd64.tar.gz" -o /tmp/acig_linux_amd64.tar.gz
-          
-          cd /tmp
-          EXPECTED=$(grep acig_linux_amd64.tar.gz checksums.txt | awk '{print $1}')
-          ACTUAL=$(sha256sum acig_linux_amd64.tar.gz | awk '{print $1}')
-          if [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "::error::checksum mismatch: expected $EXPECTED got $ACTUAL"
-            exit 1
-          fi
-          
-          tar xz -f acig_linux_amd64.tar.gz -C /usr/local/bin acig
-          chmod +x /usr/local/bin/acig
-
-      - name: Run acig
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
-          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          acig run --pr ${{ github.event.pull_request.number }} --sha ${{ github.event.pull_request.head.sha }} --format both --out /tmp/acig-review
-          EXIT_CODE=$?
-          if [ "$EXIT_CODE" -ge 2 ]; then
-            echo "::error::acig blocked this PR"
-            exit 1
-          elif [ "$EXIT_CODE" -eq 1 ]; then
-            echo "::warning::acig found warnings"
-          else
-            echo "::notice::acig passed"
-          fi
+      - uses: helloodokai/acig-action@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          ollama-api-key: ${{ secrets.OLLAMA_API_KEY }}
 ```
 
-The workflow uses `actions/create-github-app-token` when `ACIG_APP_ID` and `ACIG_APP_PRIVATE_KEY` secrets are set. If they're not set, it falls back to `GITHUB_TOKEN` (reviews appear as `github-actions[bot]`).
+With a GitHub App, reviews appear as **ACIG** with your custom logo. Without it, they appear as `github-actions[bot]`.
+
+**One-time GitHub App setup** (optional, for ACIG branding):
+
+1. Create an app at [GitHub Developer Settings](https://github.com/settings/apps/new) with:
+   - **Permissions**: Pull requests: Read & write, Checks: Read & write, Contents: Read-only
+   - **Events**: Pull request, Pull request review, Check run, Check suite
+   - Leave webhook URL empty
+2. Generate a private key → download `.pem`
+3. Install the app on your repo
+4. Add secrets: `ACIG_APP_ID` and `ACIG_APP_PRIVATE_KEY` (full contents of `.pem`, not the path)
+   - Or run `acig setup-app` to set them interactively via `gh`
 
 **Required secrets** (Settings → Secrets and variables → Actions):
 
