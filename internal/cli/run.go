@@ -22,6 +22,7 @@ import (
 	"github.com/helloodokai/acig/internal/routing"
 	"github.com/helloodokai/acig/internal/ui"
 	"github.com/helloodokai/acig/internal/verdict"
+	"github.com/helloodokai/acig/internal/version"
 )
 
 var runCmd = &cobra.Command{
@@ -77,7 +78,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 		baseSHA = baseRef
 		if showUI {
-			ui.PrintHeader(fmt.Sprintf("Reviewing PR %s — %d file(s) changed, +%d/-%d lines", prRef, d.Stats.FilesChanged, d.Stats.LinesAdded, d.Stats.LinesRemoved))
+			ui.PrintHeader(version.Version, fmt.Sprintf("Reviewing PR %s — %d file(s) changed, +%d/-%d lines", prRef, d.Stats.FilesChanged, d.Stats.LinesAdded, d.Stats.LinesRemoved))
 		} else {
 			slog.Info("reviewing PR", "pr", prRef, "base", baseRef, "files", d.Stats.FilesChanged)
 		}
@@ -94,7 +95,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("getting diff: %w", err)
 		}
 		if showUI {
-			ui.PrintHeader(fmt.Sprintf("Reviewing %s — %d file(s) changed, +%d/-%d lines", diffRange, d.Stats.FilesChanged, d.Stats.LinesAdded, d.Stats.LinesRemoved))
+			ui.PrintHeader(version.Version, fmt.Sprintf("Reviewing %s — %d file(s) changed, +%d/-%d lines", diffRange, d.Stats.FilesChanged, d.Stats.LinesAdded, d.Stats.LinesRemoved))
 		} else {
 			slog.Info("running pipeline", "diff_range", diffRange, "files", d.Stats.FilesChanged, "profile", cfg.Models.DefaultProfile)
 		}
@@ -143,13 +144,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 		slog.Warn("failed to load suppressions", "error", err)
 	}
 	if showUI && len(suppressions) > 0 {
-		ui.PrintStepf("📋", "%d suppression(s) loaded", len(suppressions))
+		ui.PrintStep("", fmt.Sprintf("%d suppression(s) loaded", len(suppressions)))
 	}
 
 	pipe := pipeline.New(cfg, router, ledger, d, suppressions)
 
 	if showUI {
-		ui.PrintStep("⏳", "Running critics...")
+		ui.PrintStep("", "Running critics...")
 		enabledIDs := critics.EnabledIDs(cfg.Critics.Enabled)
 		totalCritics := len(enabledIDs)
 		if totalCritics > 0 {
@@ -200,7 +201,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	if shouldReportGitHub() {
 		if showUI {
-			ui.PrintStep("📤", "Posting review to GitHub...")
+			ui.PrintStep("", "Posting review to GitHub...")
 		}
 		if err := reportToGitHub(ctx, cfg, v, sha); err != nil {
 			slog.Error("github report failed", "error", err)

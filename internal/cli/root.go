@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	_ "github.com/helloodokai/acig/internal/critics"
+	"github.com/helloodokai/acig/internal/version"
 )
 
 var (
@@ -27,6 +28,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "acig",
 	Short: "Agentic CI Gateway — tiered code review via cheap critics + frontier adjudication",
+	Version: version.Version,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if verbose {
 			handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
