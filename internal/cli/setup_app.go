@@ -74,13 +74,13 @@ func runSetupApp(cmd *cobra.Command, args []string) error {
 	if err := setSecret(repoSlug, "ACIG_APP_ID", appID); err != nil {
 		return fmt.Errorf("setting ACIG_APP_ID: %w", err)
 	}
-	fmt.Println("  ✓ ACIG_APP_ID set")
+	fmt.Println("  OK ACIG_APP_ID set")
 
 	fmt.Printf("  Setting ACIG_APP_PRIVATE_KEY on %s...\n", repoSlug)
 	if err := setSecretFromFile(repoSlug, "ACIG_APP_PRIVATE_KEY", pemPath); err != nil {
 		return fmt.Errorf("setting ACIG_APP_PRIVATE_KEY: %w", err)
 	}
-	fmt.Println("  ✓ ACIG_APP_PRIVATE_KEY set")
+	fmt.Println("  OK ACIG_APP_PRIVATE_KEY set")
 
 	fmt.Println()
 	fmt.Println("  Done! Make sure your workflow uses actions/create-github-app-token.")
