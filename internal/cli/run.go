@@ -213,7 +213,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	writeOutput(v)
-	os.Exit(exitCodeForDecision(string(v.Decision)))
+	os.Exit(exitCodeForDecision(string(v.Decision), cfg.Blocking.Enabled))
 	return nil
 }
 
@@ -255,7 +255,11 @@ func detectBaseSHA() string {
 
 
 
+const lastVerdictFile = "/tmp/acig-last-verdict.json"
+
 func writeOutput(v *verdict.Verdict) {
+	reporters.WriteJSON(v, lastVerdictFile)
+
 	switch format {
 	case "json":
 		path := outputPath

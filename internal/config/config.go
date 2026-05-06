@@ -9,15 +9,20 @@ import (
 )
 
 type Config struct {
-	Budget   BudgetConfig  `toml:"budget"`
-	Models   ModelsConfig   `toml:"models"`
-	Critics  CriticsConfig  `toml:"critics"`
-	Charter  CharterConfig  `toml:"charter"`
-	Paths    PathsConfig    `toml:"paths"`
+	Budget    BudgetConfig  `toml:"budget"`
+	Models    ModelsConfig   `toml:"models"`
+	Critics   CriticsConfig  `toml:"critics"`
+	Charter   CharterConfig  `toml:"charter"`
+	Paths     PathsConfig    `toml:"paths"`
+	Blocking BlockingConfig `toml:"blocking"`
 }
 
 type BudgetConfig struct {
 	PerRunUSD float64 `toml:"per_run_usd"`
+}
+
+type BlockingConfig struct {
+	Enabled bool `toml:"enabled"`
 }
 
 type ModelsConfig struct {
