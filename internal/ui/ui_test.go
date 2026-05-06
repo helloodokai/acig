@@ -85,12 +85,12 @@ func TestShouldShowUINoColor(t *testing.T) {
 
 func TestSeverityIcon(t *testing.T) {
 	cases := map[string]string{
-		"blocking": "🚫",
-		"high":     "●",
-		"medium":   "●",
-		"low":      "●",
-		"info":     "●",
-		"unknown":  "●",
+		"blocking": ">>",
+		"high":     ">",
+		"medium":   ">",
+		"low":      ">",
+		"info":     "-",
+		"unknown":  "-",
 	}
 	for sev, wantContains := range cases {
 		icon := severityIcon(sev)
@@ -189,10 +189,13 @@ func TestPrintHeader(t *testing.T) {
 	output = &buf
 	defer func() { output = orig }()
 
-	PrintHeader("Reviewing origin/main..HEAD — 5 file(s)")
+	PrintHeader("1.5.0", "Reviewing origin/main..HEAD — 5 file(s)")
 	out := buf.String()
-	if !strings.Contains(out, "acig") {
-		t.Errorf("expected 'acig' in header, got: %s", out)
+	if !strings.Contains(out, "ACIG") {
+		t.Errorf("expected 'ACIG' in header, got: %s", out)
+	}
+	if !strings.Contains(out, "1.5.0") {
+		t.Errorf("expected version in header, got: %s", out)
 	}
 	if !strings.Contains(out, "5 file") {
 		t.Errorf("expected '5 file' in header, got: %s", out)
@@ -206,8 +209,9 @@ func TestPrintSuccess(t *testing.T) {
 	defer func() { output = orig }()
 
 	PrintSuccess("All checks passed")
-	if !strings.Contains(buf.String(), "All checks passed") {
-		t.Errorf("expected success message, got: %s", buf.String())
+	out := buf.String()
+	if !strings.Contains(out, "All checks passed") {
+		t.Errorf("expected success message, got: %s", out)
 	}
 }
 

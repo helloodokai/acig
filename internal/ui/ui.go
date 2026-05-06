@@ -138,9 +138,9 @@ func (p *Progress) Done() {
 	fmt.Fprintf(p.out, "\n  %s%s Done in %.1fs%s\n", green, bold, elapsed.Seconds(), reset)
 }
 
-func PrintHeader(text string) {
+func PrintHeader(version, text string) {
 	width := 50
-	fmt.Fprintf(output, "\n%s%s%s\n", bold+blue, "🛡️  acig", reset)
+	fmt.Fprintf(output, "\n%sACIG %s%s\n", bold+blue, version, reset)
 	fmt.Fprintf(output, "%s%s%s\n", dim, strings.Repeat("─", width), reset)
 	fmt.Fprintf(output, "  %s\n\n", text)
 }
@@ -154,15 +154,15 @@ func PrintStepf(icon, format string, args ...any) {
 }
 
 func PrintSuccess(text string) {
-	fmt.Fprintf(output, "  %s%s %s%s\n", green+bold, "✓", text, reset)
+	fmt.Fprintf(output, "  %s OK %s%s\n", green+bold, text, reset)
 }
 
 func PrintWarning(text string) {
-	fmt.Fprintf(output, "  %s%s %s%s\n", yellow+bold, "⚠", text, reset)
+	fmt.Fprintf(output, "  %sWARN%s %s\n", yellow+bold, reset, text)
 }
 
 func PrintError(text string) {
-	fmt.Fprintf(output, "  %s%s %s%s\n", red+bold, "✗", text, reset)
+	fmt.Fprintf(output, "  %sERR%s %s\n", red+bold, reset, text)
 }
 
 func PrintVerdict(v VerdictSummary) {
@@ -224,17 +224,17 @@ func PrintFindings(findings []FindingDisplay) {
 func severityIcon(sev string) string {
 	switch sev {
 	case "blocking":
-		return red + "🚫" + reset
+		return red + ">>" + reset
 	case "high":
-		return red + "●" + reset
+		return red + " >" + reset
 	case "medium":
-		return yellow + "●" + reset
+		return yellow + " >" + reset
 	case "low":
-		return green + "●" + reset
+		return green + " >" + reset
 	case "info":
-		return dim + "●" + reset
+		return dim + " -" + reset
 	default:
-		return "●"
+		return " -"
 	}
 }
 
