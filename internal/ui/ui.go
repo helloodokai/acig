@@ -113,6 +113,9 @@ func (p *Progress) Increment(label string) {
 
 	barWidth := 20
 	filled := barWidth * cur / total
+	if filled > barWidth {
+		filled = barWidth
+	}
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
 	elapsed := time.Since(p.start).Seconds()
@@ -121,8 +124,12 @@ func (p *Progress) Increment(label string) {
 		status = red + "✗" + reset
 	}
 
+	displayCur := cur
+	if displayCur > total {
+		displayCur = total
+	}
 	fmt.Fprintf(p.out, "\r  %s %s%d/%d%s [%s] %s %.1fs  ",
-		status, bold, cur, total, reset, bar, label, elapsed,
+		status, bold, displayCur, total, reset, bar, label, elapsed,
 	)
 }
 

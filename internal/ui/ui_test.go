@@ -8,6 +8,21 @@ import (
 	"time"
 )
 
+func TestProgressIncrementOverTotal(t *testing.T) {
+	var buf bytes.Buffer
+	p := &Progress{out: &buf, total: 3, start: time.Now()}
+	// Increment more times than total (simulates adjudicator running after critics)
+	p.Increment("risk_classifier")
+	p.Increment("security_smell")
+	p.Increment("style_conformance")
+	p.Increment("adjudicator") // 4th increment with total=3 — must not panic
+	output := buf.String()
+	// Should cap at 3/3 and not panic
+	if !strings.Contains(output, "3/3") {
+		t.Errorf("expected 3/3 capped display, got: %s", output)
+	}
+}
+
 func TestProgressIncrementZeroTotal(t *testing.T) {
 	var buf bytes.Buffer
 	p := &Progress{out: &buf, total: 0, start: time.Now()}
