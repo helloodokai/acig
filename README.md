@@ -116,16 +116,16 @@ fi
 
 Without a GitHub App, acig reviews appear as `github-actions[bot]`. To show reviews with the **ACIG** name and logo:
 
-1. **Create the app** — run `acig setup-app` to open a browser with permissions pre-configured, or create one manually at [GitHub Developer Settings](https://github.com/settings/apps/new) with:
+1. **Create the app** — run `acig setup-app` to configure secrets interactively, or create one manually at [GitHub Developer Settings](https://github.com/settings/apps/new) with:
    - **Permissions**: Pull requests: Read & write, Checks: Read & write, Contents: Read-only
    - **Events**: Pull request, Pull request review, Check run, Check suite
    - Leave webhook URL and callback URL empty (not needed for CI-only apps)
    - Upload the ACIG logo as the app icon
 2. **Generate a private key** — in the app settings → General → Private keys → Generate private key → download the `.pem` file
-3. **Install the app** on your repository — Settings → Install App → select repos. Note the **installation ID** from the URL (the number in `/installations/XXXXX`)
+3. **Install the app** on your repository — Settings → Install App → select repos
 4. **Add repository secrets** (Settings → Secrets and variables → Actions):
-   - `ACIG_APP_ID` — your App ID
-   - `ACIG_APP_PRIVATE_KEY` — contents of the `.pem` file
+   - `ACIG_APP_ID` — your App ID (shown on the app settings page)
+   - `ACIG_APP_PRIVATE_KEY` — the full contents of the `.pem` file (not the file path)
 
 ### Workflow
 
