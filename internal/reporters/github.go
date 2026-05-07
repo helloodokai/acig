@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/google/go-github/v66/github"
 	"github.com/helloodokai/acig/internal/githubclient"
 	"github.com/helloodokai/acig/internal/verdict"
 )
@@ -14,11 +15,22 @@ import (
 const acigMarker = "<!-- acig:review -->"
 
 type GitHubReporter struct {
-	client  *githubclient.Client
+	client  GitHubClient
 	headSHA string
 }
 
-func NewGitHubReporter(client *githubclient.Client, headSHA string) *GitHubReporter {
+type GitHubClient interface {
+	ListPRFiles(ctx context.Context, owner, repo string, prNumber int) ([]string, error)
+	ListReviews(ctx context.Context, owner, repo string, prNumber int) ([]*github.PullRequestReview, error)
+	DeleteReviewComments(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error
+	DismissReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64, message string) error
+	CreateReview(ctx context.Context, owner, repo string, prNumber int, body string, comments []githubclient.ReviewComment, event string) error
+	PostStickyComment(ctx context.Context, owner, repo string, prNumber int, marker, body string) error
+	RemoveStaleAcigComments(ctx context.Context, owner, repo string, prNumber int, marker string)
+	CreateCheckRun(ctx context.Context, owner, repo, name, conclusion, title, summary, headSHA string) error
+}
+
+func NewGitHubReporter(client GitHubClient, headSHA string) *GitHubReporter {
 	return &GitHubReporter{client: client, headSHA: headSHA}
 }
 
