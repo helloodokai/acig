@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-github/v66/github"
+	"github.com/helloodokai/acig/internal/diff"
 	"github.com/helloodokai/acig/internal/githubclient"
 	"github.com/helloodokai/acig/internal/verdict"
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,7 @@ type mockGitHubClient struct {
 	listReviewsErr       error
 	deleteReviewCommentsErr error
 	dismissReviewErr     error
+	getPRFileDiffsErr    error
 }
 
 type createReviewCall struct {
@@ -41,6 +43,15 @@ func (m *mockGitHubClient) DismissReview(ctx context.Context, owner, repo string
 
 func (m *mockGitHubClient) ListPRFiles(ctx context.Context, owner, repo string, prNumber int) ([]string, error) {
 	return []string{"a.txt"}, nil
+}
+
+func (m *mockGitHubClient) GetPRFileDiffs(ctx context.Context, owner, repo string, prNumber int) (map[string]*diff.FileDiff, error) {
+	if m.getPRFileDiffsErr != nil {
+		return nil, m.getPRFileDiffsErr
+	}
+	return map[string]*diff.FileDiff{
+		"a.txt": {Path: "a.txt", Added: []string{"line1", "line2", "line3", "line4", "line5", "line6", "line7", "line8", "line9", "line10"}},
+	}, nil
 }
 
 func (m *mockGitHubClient) CreateReview(ctx context.Context, owner, repo string, prNumber int, body string, comments []githubclient.ReviewComment, event string) error {
