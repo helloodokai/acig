@@ -14,7 +14,7 @@
 
 ```bash
 # macOS (Homebrew — recommended)
-brew tap helloodokai/tap
+brew tap helloodokai/acig-tap
 brew install acig
 
 # macOS / Linux (manual)

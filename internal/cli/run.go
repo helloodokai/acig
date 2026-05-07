@@ -259,7 +259,7 @@ func detectBaseSHA() string {
 const lastVerdictFile = "/tmp/acig-last-verdict.json"
 
 func writeOutput(v *verdict.Verdict) {
-	reporters.WriteJSON(v, lastVerdictFile)
+	_ = reporters.WriteJSON(v, lastVerdictFile)
 
 	switch format {
 	case "json":
