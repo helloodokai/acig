@@ -44,22 +44,30 @@ func (c *Client) DeleteReviewComments(ctx context.Context, owner, repo string, p
 }
 
 type ReviewComment struct {
-	Path     string
-	Position int
-	Body     string
+	Path      string
+	Line      int
+	StartLine int // optional: for multi-line comments (0 means single-line)
+	Body      string
 }
 
 func (c *Client) CreateReview(ctx context.Context, owner, repo string, prNumber int, body string, comments []ReviewComment, event string) error {
 	var reviewComments []*github.DraftReviewComment
+	side := "RIGHT"
 	for _, rc := range comments {
-		if rc.Position <= 0 {
+		if rc.Line <= 0 {
 			continue
 		}
-		reviewComments = append(reviewComments, &github.DraftReviewComment{
-			Path:     &rc.Path,
-			Position: &rc.Position,
-			Body:     &rc.Body,
-		})
+		drc := &github.DraftReviewComment{
+			Path: &rc.Path,
+			Line: &rc.Line,
+			Side: &side,
+			Body: &rc.Body,
+		}
+		if rc.StartLine > 0 && rc.StartLine < rc.Line {
+			drc.StartLine = &rc.StartLine
+			drc.StartSide = &side
+		}
+		reviewComments = append(reviewComments, drc)
 	}
 
 	_, _, err := c.client.PullRequests.CreateReview(ctx, owner, repo, prNumber, &github.PullRequestReviewRequest{
