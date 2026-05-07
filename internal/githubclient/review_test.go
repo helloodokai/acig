@@ -25,6 +25,9 @@ func TestReviewCommentStruct_NoStartLine(t *testing.T) {
 		Line: 10,
 		Body: "test body",
 	}
+	require.Equal(t, "test.txt", rc.Path)
+	require.Equal(t, 10, rc.Line)
+	require.Equal(t, "test body", rc.Body)
 	require.Equal(t, 0, rc.StartLine)
 }
 
@@ -35,6 +38,8 @@ func TestReviewCommentStruct_MultiLine(t *testing.T) {
 		StartLine: 10,
 		Body:     "multi-line comment",
 	}
+	require.Equal(t, "test.txt", rc.Path)
+	require.Equal(t, "multi-line comment", rc.Body)
 	require.True(t, rc.StartLine > 0)
 	require.Greater(t, rc.Line, rc.StartLine)
 }
