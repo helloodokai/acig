@@ -139,11 +139,16 @@ func (r *GitHubReporter) buildReviewComments(v *verdict.Verdict) []githubclient.
 				body.WriteString(fmt.Sprintf("  \n  **Suggested fix:** %s\n", f.SuggestedFix))
 			}
 		}
-		comments = append(comments, githubclient.ReviewComment{
-			Path:     findings[0].File,
-			Position: findings[0].LineStart,
-			Body:     body.String(),
-		})
+		comment := githubclient.ReviewComment{
+			Path: findings[0].File,
+			Line: findings[0].LineStart,
+			Body: body.String(),
+		}
+		if findings[0].LineEnd > findings[0].LineStart {
+			comment.Line = findings[0].LineEnd
+			comment.StartLine = findings[0].LineStart
+		}
+		comments = append(comments, comment)
 	}
 
 	return comments
