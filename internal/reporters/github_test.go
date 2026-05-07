@@ -61,7 +61,7 @@ func TestBuildReviewComments_FiltersNonPRFiles(t *testing.T) {
 	}
 
 	prFiles := []string{"a.txt", "b.txt", "c.txt"}
-	comments := buildReviewComments(v, prFiles)
+	comments := buildReviewComments(v, prFiles, nil)
 
 	require.Len(t, comments, 2)
 	require.Equal(t, "a.txt", comments[0].Path)
@@ -76,7 +76,7 @@ func TestBuildReviewComments_AllFilesIfPRFilesNil(t *testing.T) {
 		},
 	}
 
-	comments := buildReviewComments(v, nil)
+	comments := buildReviewComments(v, nil, nil)
 
 	require.Len(t, comments, 2)
 }
@@ -88,7 +88,7 @@ func TestBuildReviewComments_EmptyPRFiles(t *testing.T) {
 		},
 	}
 
-	comments := buildReviewComments(v, []string{})
+	comments := buildReviewComments(v, []string{}, nil)
 
 	require.Len(t, comments, 1)
 }
@@ -100,7 +100,7 @@ func TestBuildReviewComments_MultiLineComment(t *testing.T) {
 		},
 	}
 
-	comments := buildReviewComments(v, []string{"a.txt"})
+	comments := buildReviewComments(v, []string{"a.txt"}, nil)
 
 	require.Len(t, comments, 1)
 	require.Equal(t, 20, comments[0].Line)
@@ -114,7 +114,7 @@ func TestBuildReviewComments_SingleLineComment(t *testing.T) {
 		},
 	}
 
-	comments := buildReviewComments(v, []string{"a.txt"})
+	comments := buildReviewComments(v, []string{"a.txt"}, nil)
 
 	require.Len(t, comments, 1)
 	require.Equal(t, 10, comments[0].Line)
@@ -131,7 +131,7 @@ func TestBuildReviewComments_GroupsFindingsByFileAndLine(t *testing.T) {
 		},
 	}
 
-	comments := buildReviewComments(v, []string{"a.txt", "b.txt"})
+	comments := buildReviewComments(v, []string{"a.txt", "b.txt"}, nil)
 
 	require.Len(t, comments, 3)
 	require.Contains(t, comments[0].Body, "Issue 1")
