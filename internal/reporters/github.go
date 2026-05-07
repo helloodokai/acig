@@ -30,7 +30,13 @@ func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, 
 	r.client.RemoveStaleAcigComments(ctx, owner, repo, prNumber, acigMarker)
 
 	reviewBody := r.buildReviewBody(v)
-	reviewComments := r.buildReviewComments(v)
+
+	prFiles, err := r.client.ListPRFiles(ctx, owner, repo, prNumber)
+	if err != nil {
+		slog.Warn("failed to list PR files, using all findings", "error", err)
+		prFiles = nil
+	}
+	reviewComments := buildReviewComments(v, prFiles)
 	event := "COMMENT"
 	if v.Decision == verdict.DecisionBlock {
 		event = "REQUEST_CHANGES"
@@ -120,12 +126,20 @@ func (r *GitHubReporter) buildReviewBody(v *verdict.Verdict) string {
 	return body.String()
 }
 
-func (r *GitHubReporter) buildReviewComments(v *verdict.Verdict) []githubclient.ReviewComment {
+func buildReviewComments(v *verdict.Verdict, prFiles []string) []githubclient.ReviewComment {
 	fileFindings := groupFindings(v.Findings)
 	var comments []githubclient.ReviewComment
 
+	prFilesSet := make(map[string]bool, len(prFiles))
+	for _, f := range prFiles {
+		prFilesSet[f] = true
+	}
+
 	for _, findings := range fileFindings {
 		if len(findings) == 0 || findings[0].File == "" || findings[0].LineStart <= 0 {
+			continue
+		}
+		if len(prFiles) > 0 && !prFilesSet[findings[0].File] {
 			continue
 		}
 		var body strings.Builder
