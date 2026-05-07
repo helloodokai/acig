@@ -19,16 +19,21 @@ jobs:
       - name: Get GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v2
-        if: ${{ secrets.ACIG_APP_ID != '' && secrets.ACIG_APP_PRIVATE_KEY != '' }}
+        if: ${{ vars.ACIG_APP_ID != '' }}
         with:
-          app-id: ${{ secrets.ACIG_APP_ID }}
+          app-id: ${{ vars.ACIG_APP_ID }}
           private-key: ${{ secrets.ACIG_APP_PRIVATE_KEY }}
 
       - name: Install acig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ACIG_VERSION="1.4.1"
+          ACIG_VERSION=$(curl -sL "https://api.github.com/repos/helloodokai/acig/releases/latest" | grep '"tag_name"' | sed 's/.*v\([0-9.]*\).*/\1/')
+          if [ -z "$ACIG_VERSION" ]; then
+            echo "::error::could not determine latest acig version"
+            exit 1
+          fi
+          echo "Using ACIG version ${ACIG_VERSION}"
           RELEASE_URL="https://github.com/helloodokai/acig/releases/download/v${ACIG_VERSION}"
 
           curl -sL "${RELEASE_URL}/checksums.txt" -o /tmp/checksums.txt
