@@ -55,7 +55,7 @@ func runSetupApp(cmd *cobra.Command, args []string) error {
 
 	var appID string
 	fmt.Print("  App ID: ")
-	fmt.Scanln(&appID)
+	_, _ = fmt.Scanln(&appID)
 	appID = strings.TrimSpace(appID)
 	if appID == "" {
 		return fmt.Errorf("App ID is required")
@@ -63,7 +63,7 @@ func runSetupApp(cmd *cobra.Command, args []string) error {
 
 	fmt.Print("  Path to private key (.pem): ")
 	var pemPath string
-	fmt.Scanln(&pemPath)
+	_, _ = fmt.Scanln(&pemPath)
 	pemPath = strings.TrimSpace(pemPath)
 	if pemPath == "" {
 		return fmt.Errorf("Private key path is required")
