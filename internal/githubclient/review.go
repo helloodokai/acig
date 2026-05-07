@@ -100,3 +100,15 @@ func (c *Client) RemoveStaleAcigComments(ctx context.Context, owner, repo string
 		}
 	}
 }
+
+func (c *Client) ListPRFiles(ctx context.Context, owner, repo string, prNumber int) ([]string, error) {
+	files, _, err := c.client.PullRequests.ListFiles(ctx, owner, repo, prNumber, &github.ListOptions{PerPage: 100})
+	if err != nil {
+		return nil, fmt.Errorf("listing PR files: %w", err)
+	}
+	paths := make([]string, len(files))
+	for i, f := range files {
+		paths[i] = f.GetFilename()
+	}
+	return paths, nil
+}
