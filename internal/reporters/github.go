@@ -163,7 +163,7 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 		if len(findings) == 0 || findings[0].File == "" || findings[0].LineStart <= 0 {
 			continue
 		}
-		if len(prFiles) > 0 && !prFilesSet[findings[0].File] {
+		if len(prFilesSet) > 0 && !prFilesSet[findings[0].File] {
 			continue
 		}
 
