@@ -28,7 +28,7 @@ archives:
       - goos: windows
         formats: [zip]
 
-# homebrew_casks disabled — manually update helloodokai/homebrew-tap after each release
+# homebrew_casks disabled — manually update helloodokai/homebrew-acig-tap after each release
 # (HOMEBREW_TAP_GITHUB_TOKEN 401 issue; see docs for manual cask update steps)
 #
 # homebrew_casks:
