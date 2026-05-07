@@ -43,18 +43,21 @@ func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, 
 	}
 
 	if err := r.client.CreateReview(ctx, owner, repo, prNumber, reviewBody, reviewComments, event); err != nil {
-		slog.Warn("failed to create review, falling back to comment", "error", err)
-		md := FormatMarkdown(v)
-		var body strings.Builder
-		body.WriteString(acigMarker + "\n")
-		body.WriteString(md)
-		body.WriteString("\n\n<details>\n<summary>Verdict JSON</summary>\n\n```json\n")
-		jsonBody, err := verdictJSON(v)
-		if err == nil {
-			body.WriteString(jsonBody)
+		slog.Warn("failed to create review with comments, retrying without inline comments", "error", err)
+		if err := r.client.CreateReview(ctx, owner, repo, prNumber, reviewBody, nil, event); err != nil {
+			slog.Warn("failed to create review, falling back to comment", "error", err)
+			md := FormatMarkdown(v)
+			var body strings.Builder
+			body.WriteString(acigMarker + "\n")
+			body.WriteString(md)
+			body.WriteString("\n\n<details>\n<summary>Verdict JSON</summary>\n\n```json\n")
+			jsonBody, err := verdictJSON(v)
+			if err == nil {
+				body.WriteString(jsonBody)
+			}
+			body.WriteString("\n```\n</details>\n")
+			return r.client.PostStickyComment(ctx, owner, repo, prNumber, acigMarker, body.String())
 		}
-		body.WriteString("\n```\n</details>\n")
-		return r.client.PostStickyComment(ctx, owner, repo, prNumber, acigMarker, body.String())
 	}
 
 	conclusion := "success"
