@@ -19,6 +19,7 @@ jobs:
       - name: Get GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v2
+        if: ${{ vars.ACIG_APP_ID != '' && secrets.ACIG_APP_PRIVATE_KEY != '' }}
         with:
           app-id: ${{ vars.ACIG_APP_ID }}
           private-key: ${{ secrets.ACIG_APP_PRIVATE_KEY }}
