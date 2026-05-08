@@ -44,12 +44,15 @@ func TestGroupFindings_EmptyFile(t *testing.T) {
 func TestGroupFindings_ZeroLineStart(t *testing.T) {
 	findings := []verdict.Finding{
 		{File: "a.txt", LineStart: 0, Title: "Zero line"},
+		{File: "a.txt", LineStart: 0, Title: "Another zero line"},
 		{File: "b.txt", LineStart: 10, Title: "Valid line"},
 	}
 
 	groups := groupFindings(findings)
-	require.Len(t, groups, 1)
-	require.Equal(t, "b.txt", groups[0][0].File)
+	require.Len(t, groups, 2)
+	require.Equal(t, "a.txt", groups[0][0].File)
+	require.Len(t, groups[0], 2)
+	require.Equal(t, "b.txt", groups[1][0].File)
 }
 
 // hr is a helper to create HunkRange slices
@@ -330,4 +333,23 @@ func TestBuildReviewComments_LineInSecondHunkRange(t *testing.T) {
 	require.Len(t, comments, 1)
 	require.Equal(t, "multi.go", comments[0].Path)
 	require.Equal(t, 55, comments[0].Line)
+}
+
+func TestBuildReviewComments_ZeroLineStartClampsToHunkStart(t *testing.T) {
+	v := &verdict.Verdict{
+		Findings: []verdict.Finding{
+			{File: "app.ts", LineStart: 0, Title: "Issue with no line"},
+			{File: "app.ts", LineStart: 0, Title: "Another issue with no line"},
+		},
+	}
+
+	fileDiffs := map[string]*diff.FileDiff{
+		"app.ts": {Path: "app.ts", StartLine: 5, HunkRanges: hr(diff.HunkRange{Start: 5, End: 15}), Added: []string{"l5", "l6"}},
+	}
+	comments := buildReviewComments(v, []string{"app.ts"}, fileDiffs)
+
+	require.Len(t, comments, 1)
+	require.Equal(t, "app.ts", comments[0].Path)
+	require.Equal(t, 5, comments[0].Line)
+	require.Contains(t, comments[0].Body, "2 issue(s)")
 }

@@ -227,7 +227,7 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 	}
 
 	for _, findings := range fileFindings {
-		if len(findings) == 0 || findings[0].File == "" || findings[0].LineStart <= 0 {
+		if len(findings) == 0 || findings[0].File == "" {
 			continue
 		}
 		if len(prFilesSet) > 0 && !prFilesSet[findings[0].File] {
@@ -240,17 +240,26 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 			slog.Warn("skipping finding with no diff data", "file", findings[0].File, "critic", findings[0].Critic, "title", findings[0].Title)
 			continue
 		}
-		validStart := validateLine(fd, findings[0].LineStart)
+
+		lineStart := findings[0].LineStart
+		if lineStart <= 0 {
+			if len(fd.HunkRanges) == 0 {
+				continue
+			}
+			lineStart = fd.HunkRanges[0].Start
+		}
+
+		validStart := validateLine(fd, lineStart)
 		if validStart <= 0 {
 			continue
 		}
 
-		lineStart := validStart
-		lineEnd := lineStart
-		if findings[0].LineEnd > findings[0].LineStart {
+		commentLineStart := validStart
+		commentLineEnd := commentLineStart
+		if findings[0].LineEnd > lineStart {
 			validEnd := validateLine(fd, findings[0].LineEnd)
 			if validEnd > 0 {
-				lineEnd = validEnd
+				commentLineEnd = validEnd
 			}
 		}
 
@@ -267,12 +276,12 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 		}
 		comment := githubclient.ReviewComment{
 			Path: findings[0].File,
-			Line: lineStart,
+			Line: commentLineStart,
 			Body: body.String(),
 		}
-		if lineEnd > lineStart {
-			comment.Line = lineEnd
-			comment.StartLine = lineStart
+		if commentLineEnd > commentLineStart {
+			comment.Line = commentLineEnd
+			comment.StartLine = commentLineStart
 		}
 		comments = append(comments, comment)
 	}
@@ -284,10 +293,14 @@ func groupFindings(findings []verdict.Finding) [][]verdict.Finding {
 	groups := map[string][]verdict.Finding{}
 	var order []string
 	for _, f := range findings {
-		if f.File == "" || f.LineStart <= 0 {
+		if f.File == "" {
 			continue
 		}
-		key := fmt.Sprintf("%s:%d", f.File, f.LineStart)
+		line := f.LineStart
+		if line <= 0 {
+			line = 0
+		}
+		key := fmt.Sprintf("%s:%d", f.File, line)
 		if _, exists := groups[key]; !exists {
 			order = append(order, key)
 		}
