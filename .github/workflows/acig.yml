@@ -28,22 +28,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ACIG_VERSION=$(curl -sL -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/helloodokai/acig/releases/latest" | grep '"tag_name"' | sed 's/.*v\([0-9.]*\).*/\1/')
+          ACIG_VERSION=$(gh release view --repo helloodokai/acig --json tagName --jq '.tagName' 2>/dev/null || echo "")
           if [ -z "$ACIG_VERSION" ]; then
             echo "::error::could not determine latest acig version"
             exit 1
           fi
           echo "Using ACIG version ${ACIG_VERSION}"
-          RELEASE_URL="https://github.com/helloodokai/acig/releases/download/v${ACIG_VERSION}"
 
-          curl -sL "${RELEASE_URL}/checksums.txt" -o /tmp/checksums.txt
-          curl -sL "${RELEASE_URL}/acig_linux_amd64.tar.gz" -o /tmp/acig_linux_amd64.tar.gz
+          gh release download "${ACIG_VERSION}" --repo helloodokai/acig -p "checksums.txt" -p "acig_linux_amd64.tar.gz" -D /tmp
 
           cd /tmp
           EXPECTED=$(grep "acig_linux_amd64.tar.gz" checksums.txt | awk '{print $1}')
           if [ -z "$EXPECTED" ]; then
             echo "::error::checksums.txt does not contain acig_linux_amd64.tar.gz"
-            echo "checksums.txt contents:"
             cat checksums.txt
             exit 1
           fi
