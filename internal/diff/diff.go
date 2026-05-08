@@ -1,12 +1,13 @@
 package diff
 
 type FileDiff struct {
-	Path     string
-	Added    []string
-	Removed  []string
-	Patch    string
-	IsNew    bool
-	IsDelete bool
+	Path      string
+	StartLine int
+	Added     []string
+	Removed   []string
+	Patch     string
+	IsNew     bool
+	IsDelete  bool
 }
 
 type Diff struct {

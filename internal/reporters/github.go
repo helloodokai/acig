@@ -167,28 +167,21 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 			continue
 		}
 
-		lineStart := findings[0].LineStart
-		lineEnd := findings[0].LineEnd
+		fd := fileDiffs[findings[0].File]
+		if fd == nil {
+			continue
+		}
+		validStart := validateLine(fd, findings[0].LineStart)
+		if validStart <= 0 {
+			continue
+		}
 
-		if fileDiffs != nil {
-			fd := fileDiffs[findings[0].File]
-			if fd == nil {
-				continue
-			}
-			validStart := validateLine(fd, lineStart)
-			if validStart <= 0 {
-				continue
-			}
-			lineStart = validStart
-			if lineEnd > findings[0].LineStart {
-				validEnd := validateLine(fd, lineEnd)
-				if validEnd > 0 {
-					lineEnd = validEnd
-				} else {
-					lineEnd = lineStart
-				}
-			} else {
-				lineEnd = lineStart
+		lineStart := validStart
+		lineEnd := lineStart
+		if findings[0].LineEnd > findings[0].LineStart {
+			validEnd := validateLine(fd, findings[0].LineEnd)
+			if validEnd > 0 {
+				lineEnd = validEnd
 			}
 		}
 
@@ -208,7 +201,7 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 			Line: lineStart,
 			Body: body.String(),
 		}
-		if lineEnd > findings[0].LineStart && lineEnd != lineStart {
+		if lineEnd > lineStart {
 			comment.Line = lineEnd
 			comment.StartLine = lineStart
 		}
@@ -243,14 +236,17 @@ func validateLine(fd *diff.FileDiff, requestedLine int) int {
 	if fd == nil || fd.IsDelete {
 		return 0
 	}
-	addedCount := len(fd.Added)
-	if addedCount == 0 {
+	if fd.StartLine <= 0 || len(fd.Added) == 0 {
 		return 0
 	}
-	if requestedLine <= addedCount {
-		return requestedLine
+	lastAddedLine := fd.StartLine + len(fd.Added) - 1
+	if requestedLine > lastAddedLine {
+		return lastAddedLine
 	}
-	return addedCount
+	if requestedLine < fd.StartLine {
+		return fd.StartLine
+	}
+	return requestedLine
 }
 
 func verdictJSON(v *verdict.Verdict) (string, error) {

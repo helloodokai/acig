@@ -122,19 +122,18 @@ func (c *Client) GetPRFileDiffs(ctx context.Context, owner, repo string, prNumbe
 
 	result := make(map[string]*diff.FileDiff)
 	for _, f := range files {
-		fd := &diff.FileDiff{
-			Path:     f.GetFilename(),
-			IsNew:    f.GetStatus() == "added",
-			IsDelete: f.GetStatus() == "removed",
+		if f.Patch == nil || *f.Patch == "" {
+			continue
 		}
-		if f.Patch != nil {
-			d, parseErr := diff.FromFiles(*f.Patch)
-			if parseErr == nil && len(d.Files) > 0 {
-				fd.Added = d.Files[0].Added
-				fd.Removed = d.Files[0].Removed
-			}
+		d, parseErr := diff.FromFiles(*f.Patch)
+		if parseErr != nil || len(d.Files) == 0 {
+			continue
 		}
-		result[f.GetFilename()] = fd
+		fd := &d.Files[0]
+		if fd.IsDelete {
+			continue
+		}
+		result[fd.Path] = fd
 	}
 	return result, nil
 }
