@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v66/github"
+	"github.com/helloodokai/acig/internal/diff"
 )
 
 func (c *Client) ListReviews(ctx context.Context, owner, repo string, prNumber int) ([]*github.PullRequestReview, error) {
@@ -99,4 +100,41 @@ func (c *Client) RemoveStaleAcigComments(ctx context.Context, owner, repo string
 			}
 		}
 	}
+}
+
+func (c *Client) ListPRFiles(ctx context.Context, owner, repo string, prNumber int) ([]string, error) {
+	files, _, err := c.client.PullRequests.ListFiles(ctx, owner, repo, prNumber, &github.ListOptions{PerPage: 100})
+	if err != nil {
+		return nil, fmt.Errorf("listing PR files: %w", err)
+	}
+	paths := make([]string, len(files))
+	for i, f := range files {
+		paths[i] = f.GetFilename()
+	}
+	return paths, nil
+}
+
+func (c *Client) GetPRFileDiffs(ctx context.Context, owner, repo string, prNumber int) (map[string]*diff.FileDiff, error) {
+	files, _, err := c.client.PullRequests.ListFiles(ctx, owner, repo, prNumber, &github.ListOptions{PerPage: 100})
+	if err != nil {
+		return nil, fmt.Errorf("listing PR files for diffs: %w", err)
+	}
+
+	result := make(map[string]*diff.FileDiff)
+	for _, f := range files {
+		fd := &diff.FileDiff{
+			Path:     f.GetFilename(),
+			IsNew:    f.GetStatus() == "added",
+			IsDelete: f.GetStatus() == "removed",
+		}
+		if f.Patch != nil {
+			d, parseErr := diff.FromFiles(*f.Patch)
+			if parseErr == nil && len(d.Files) > 0 {
+				fd.Added = d.Files[0].Added
+				fd.Removed = d.Files[0].Removed
+			}
+		}
+		result[f.GetFilename()] = fd
+	}
+	return result, nil
 }

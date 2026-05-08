@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/google/go-github/v66/github"
+	"github.com/helloodokai/acig/internal/diff"
 	"github.com/helloodokai/acig/internal/githubclient"
 	"github.com/helloodokai/acig/internal/verdict"
 )
@@ -14,11 +16,23 @@ import (
 const acigMarker = "<!-- acig:review -->"
 
 type GitHubReporter struct {
-	client  *githubclient.Client
+	client  GitHubClient
 	headSHA string
 }
 
-func NewGitHubReporter(client *githubclient.Client, headSHA string) *GitHubReporter {
+type GitHubClient interface {
+	ListPRFiles(ctx context.Context, owner, repo string, prNumber int) ([]string, error)
+	GetPRFileDiffs(ctx context.Context, owner, repo string, prNumber int) (map[string]*diff.FileDiff, error)
+	ListReviews(ctx context.Context, owner, repo string, prNumber int) ([]*github.PullRequestReview, error)
+	DeleteReviewComments(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error
+	DismissReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64, message string) error
+	CreateReview(ctx context.Context, owner, repo string, prNumber int, body string, comments []githubclient.ReviewComment, event string) error
+	PostStickyComment(ctx context.Context, owner, repo string, prNumber int, marker, body string) error
+	RemoveStaleAcigComments(ctx context.Context, owner, repo string, prNumber int, marker string)
+	CreateCheckRun(ctx context.Context, owner, repo, name, conclusion, title, summary, headSHA string) error
+}
+
+func NewGitHubReporter(client GitHubClient, headSHA string) *GitHubReporter {
 	return &GitHubReporter{client: client, headSHA: headSHA}
 }
 
@@ -30,25 +44,41 @@ func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, 
 	r.client.RemoveStaleAcigComments(ctx, owner, repo, prNumber, acigMarker)
 
 	reviewBody := r.buildReviewBody(v)
-	reviewComments := r.buildReviewComments(v)
+
+	prFiles, err := r.client.ListPRFiles(ctx, owner, repo, prNumber)
+	if err != nil {
+		slog.Warn("failed to list PR files, using all findings", "error", err)
+		prFiles = nil
+	}
+
+	fileDiffs, err := r.client.GetPRFileDiffs(ctx, owner, repo, prNumber)
+	if err != nil {
+		slog.Warn("failed to get PR file diffs, skipping line validation", "error", err)
+		fileDiffs = nil
+	}
+
+	reviewComments := buildReviewComments(v, prFiles, fileDiffs)
 	event := "COMMENT"
 	if v.Decision == verdict.DecisionBlock {
 		event = "REQUEST_CHANGES"
 	}
 
 	if err := r.client.CreateReview(ctx, owner, repo, prNumber, reviewBody, reviewComments, event); err != nil {
-		slog.Warn("failed to create review, falling back to comment", "error", err)
-		md := FormatMarkdown(v)
-		var body strings.Builder
-		body.WriteString(acigMarker + "\n")
-		body.WriteString(md)
-		body.WriteString("\n\n<details>\n<summary>Verdict JSON</summary>\n\n```json\n")
-		jsonBody, err := verdictJSON(v)
-		if err == nil {
-			body.WriteString(jsonBody)
+		slog.Warn("failed to create review with comments, retrying without inline comments", "error", err)
+		if err := r.client.CreateReview(ctx, owner, repo, prNumber, reviewBody, nil, event); err != nil {
+			slog.Warn("failed to create review, falling back to comment", "error", err)
+			md := FormatMarkdown(v)
+			var body strings.Builder
+			body.WriteString(acigMarker + "\n")
+			body.WriteString(md)
+			body.WriteString("\n\n<details>\n<summary>Verdict JSON</summary>\n\n```json\n")
+			jsonBody, err := verdictJSON(v)
+			if err == nil {
+				body.WriteString(jsonBody)
+			}
+			body.WriteString("\n```\n</details>\n")
+			return r.client.PostStickyComment(ctx, owner, repo, prNumber, acigMarker, body.String())
 		}
-		body.WriteString("\n```\n</details>\n")
-		return r.client.PostStickyComment(ctx, owner, repo, prNumber, acigMarker, body.String())
 	}
 
 	conclusion := "success"
@@ -120,14 +150,48 @@ func (r *GitHubReporter) buildReviewBody(v *verdict.Verdict) string {
 	return body.String()
 }
 
-func (r *GitHubReporter) buildReviewComments(v *verdict.Verdict) []githubclient.ReviewComment {
+func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[string]*diff.FileDiff) []githubclient.ReviewComment {
 	fileFindings := groupFindings(v.Findings)
 	var comments []githubclient.ReviewComment
+
+	prFilesSet := make(map[string]bool, len(prFiles))
+	for _, f := range prFiles {
+		prFilesSet[f] = true
+	}
 
 	for _, findings := range fileFindings {
 		if len(findings) == 0 || findings[0].File == "" || findings[0].LineStart <= 0 {
 			continue
 		}
+		if len(prFiles) > 0 && !prFilesSet[findings[0].File] {
+			continue
+		}
+
+		lineStart := findings[0].LineStart
+		lineEnd := findings[0].LineEnd
+
+		if fileDiffs != nil {
+			fd := fileDiffs[findings[0].File]
+			if fd == nil {
+				continue
+			}
+			validStart := validateLine(fd, lineStart)
+			if validStart <= 0 {
+				continue
+			}
+			lineStart = validStart
+			if lineEnd > findings[0].LineStart {
+				validEnd := validateLine(fd, lineEnd)
+				if validEnd > 0 {
+					lineEnd = validEnd
+				} else {
+					lineEnd = lineStart
+				}
+			} else {
+				lineEnd = lineStart
+			}
+		}
+
 		var body strings.Builder
 		body.WriteString(fmt.Sprintf("**acig** found %d issue(s) here:\n\n", len(findings)))
 		for i, f := range findings {
@@ -141,12 +205,12 @@ func (r *GitHubReporter) buildReviewComments(v *verdict.Verdict) []githubclient.
 		}
 		comment := githubclient.ReviewComment{
 			Path: findings[0].File,
-			Line: findings[0].LineStart,
+			Line: lineStart,
 			Body: body.String(),
 		}
-		if findings[0].LineEnd > findings[0].LineStart {
-			comment.Line = findings[0].LineEnd
-			comment.StartLine = findings[0].LineStart
+		if lineEnd > findings[0].LineStart && lineEnd != lineStart {
+			comment.Line = lineEnd
+			comment.StartLine = lineStart
 		}
 		comments = append(comments, comment)
 	}
@@ -173,6 +237,20 @@ func groupFindings(findings []verdict.Finding) [][]verdict.Finding {
 		result = append(result, groups[key])
 	}
 	return result
+}
+
+func validateLine(fd *diff.FileDiff, requestedLine int) int {
+	if fd == nil || fd.IsDelete {
+		return 0
+	}
+	addedCount := len(fd.Added)
+	if addedCount == 0 {
+		return 0
+	}
+	if requestedLine <= addedCount {
+		return requestedLine
+	}
+	return addedCount
 }
 
 func verdictJSON(v *verdict.Verdict) (string, error) {

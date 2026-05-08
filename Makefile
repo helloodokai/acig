@@ -12,6 +12,8 @@ test:
 lint:
 	golangci-lint run
 
+check: lint test
+
 vet:
 	go vet ./...
 
