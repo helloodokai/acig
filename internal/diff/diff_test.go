@@ -43,6 +43,32 @@ func TestParse(t *testing.T) {
 	require.Equal(t, 2, d.Stats.FilesChanged)
 }
 
+// TestParse_DiffLinesTracked verifies that Parse populates DiffLines with the
+// real new-file line numbers so validateLine can do exact matching.
+func TestParse_DiffLinesTracked(t *testing.T) {
+	d, err := Parse(samplePatch)
+	require.NoError(t, err)
+	require.Len(t, d.Files, 2)
+
+	// main.go: new file, hunk @@ -0,0 +1,5 @@ → new-file lines 1-5 (all added)
+	mainGo := d.Files[0]
+	require.Equal(t, "main.go", mainGo.Path)
+	for _, line := range []int{1, 2, 3, 4, 5} {
+		require.True(t, mainGo.DiffLines[line], "expected line %d in DiffLines for main.go", line)
+	}
+	require.False(t, mainGo.DiffLines[6], "line 6 should not be in DiffLines for main.go")
+
+	// auth/login.go: hunk @@ -10,6 +10,8 @@
+	// 3 removed lines do not appear in new file; 4 added lines and context lines
+	// span new-file lines 10-17.
+	loginGo := d.Files[1]
+	require.Equal(t, "auth/login.go", loginGo.Path)
+	// The first context line in the hunk is new-file line 10.
+	require.True(t, loginGo.DiffLines[10], "expected context line 10 in DiffLines for auth/login.go")
+	// Added lines follow at 11, 12, 13.
+	require.True(t, loginGo.DiffLines[11], "expected added line 11 in DiffLines for auth/login.go")
+}
+
 func TestParseEmpty(t *testing.T) {
 	d, err := Parse("")
 	require.NoError(t, err)

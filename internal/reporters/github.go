@@ -28,6 +28,7 @@ type GitHubClient interface {
 	DismissReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64, message string) error
 	CreateReview(ctx context.Context, owner, repo string, prNumber int, body string, comments []githubclient.ReviewComment, event string) error
 	PostStickyComment(ctx context.Context, owner, repo string, prNumber int, marker, body string) error
+	PostComment(ctx context.Context, owner, repo string, prNumber int, body string) error
 	RemoveStaleAcigComments(ctx context.Context, owner, repo string, prNumber int, marker string)
 	CreateCheckRun(ctx context.Context, owner, repo, name, conclusion, title, summary, headSHA string) error
 }
@@ -78,6 +79,19 @@ func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, 
 			}
 			body.WriteString("\n```\n</details>\n")
 			return r.client.PostStickyComment(ctx, owner, repo, prNumber, acigMarker, body.String())
+		}
+	}
+
+	// Post general findings (no file/line), missing-file findings (file not in the PR),
+	// and findings whose line falls outside the diff as individual PR comments so they
+	// are visible and actionable rather than buried in the review body table.
+	prFilesSet := make(map[string]bool, len(prFiles))
+	for _, f := range prFiles {
+		prFilesSet[f] = true
+	}
+	for _, comment := range buildGeneralComments(v, prFilesSet, fileDiffs) {
+		if err := r.client.PostComment(ctx, owner, repo, prNumber, comment); err != nil {
+			slog.Warn("failed to post general finding comment", "error", err)
 		}
 	}
 
@@ -177,6 +191,7 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 			}
 			validStart := validateLine(fd, lineStart)
 			if validStart <= 0 {
+				// Line is not in the diff — will be posted as a general comment instead.
 				continue
 			}
 			lineStart = validStart
@@ -218,6 +233,55 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 	return comments
 }
 
+// buildGeneralComments returns one markdown string per finding that cannot be
+// posted as an inline review comment: findings with no file, findings whose
+// file is not part of the PR, and findings whose line number falls outside the
+// visible diff hunks.
+func buildGeneralComments(v *verdict.Verdict, prFilesSet map[string]bool, fileDiffs map[string]*diff.FileDiff) []string {
+	var comments []string
+	for _, f := range v.Findings {
+		reason := generalReason(f, prFilesSet, fileDiffs)
+		if reason == "" {
+			continue // will be (or already was) posted as an inline review comment
+		}
+
+		var body strings.Builder
+		body.WriteString(acigMarker + "\n")
+		if f.File != "" {
+			body.WriteString(fmt.Sprintf("**acig** [%s] — `%s`", reason, f.File))
+			if f.LineStart > 0 {
+				body.WriteString(fmt.Sprintf(" (line %d)", f.LineStart))
+			}
+		} else {
+			body.WriteString(fmt.Sprintf("**acig** [%s]", reason))
+		}
+		body.WriteString(fmt.Sprintf("\n\n**[%s] %s** (%s)\n\n%s", f.Severity, f.Title, f.Critic, f.Detail))
+		if f.SuggestedFix != "" {
+			body.WriteString(fmt.Sprintf("\n\n**Suggested fix:** %s", f.SuggestedFix))
+		}
+		comments = append(comments, body.String())
+	}
+	return comments
+}
+
+// generalReason returns a short label explaining why a finding cannot be an
+// inline comment, or "" if it can be posted inline.
+func generalReason(f verdict.Finding, prFilesSet map[string]bool, fileDiffs map[string]*diff.FileDiff) string {
+	if f.File == "" || f.LineStart <= 0 {
+		return "general"
+	}
+	if len(prFilesSet) > 0 && !prFilesSet[f.File] {
+		return "file not in PR"
+	}
+	if fileDiffs != nil {
+		fd := fileDiffs[f.File]
+		if fd == nil || validateLine(fd, f.LineStart) <= 0 {
+			return "outside diff"
+		}
+	}
+	return ""
+}
+
 func groupFindings(findings []verdict.Finding) [][]verdict.Finding {
 	groups := map[string][]verdict.Finding{}
 	var order []string
@@ -239,10 +303,31 @@ func groupFindings(findings []verdict.Finding) [][]verdict.Finding {
 	return result
 }
 
+// validateLine returns the line number to use for a GitHub PR review inline
+// comment, or 0 if no valid position can be determined.
+//
+// When fd.DiffLines is populated (the normal path from GetPRFileDiffs), only
+// lines that are actually visible in the diff are accepted; an exact match is
+// required so that GitHub never rejects the position.  If DiffLines is empty
+// we fall back to the legacy count-based heuristic (used in unit tests that
+// build FileDiff structs manually without DiffLines).
 func validateLine(fd *diff.FileDiff, requestedLine int) int {
 	if fd == nil || fd.IsDelete {
 		return 0
 	}
+
+	// Preferred path: use the real new-file line numbers tracked during parse.
+	if len(fd.DiffLines) > 0 {
+		if fd.DiffLines[requestedLine] {
+			return requestedLine
+		}
+		// Line is not visible in any diff hunk — caller should treat as general.
+		return 0
+	}
+
+	// Legacy fallback: fd.Added holds line contents; use its length as a rough
+	// upper bound.  This is intentionally kept for tests that build FileDiff
+	// without DiffLines.
 	addedCount := len(fd.Added)
 	if addedCount == 0 {
 		return 0

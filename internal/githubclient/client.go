@@ -52,6 +52,16 @@ func (c *Client) PostStickyComment(ctx context.Context, owner, repo string, prNu
 	return nil
 }
 
+func (c *Client) PostComment(ctx context.Context, owner, repo string, prNumber int, body string) error {
+	_, _, err := c.client.Issues.CreateComment(ctx, owner, repo, prNumber, &github.IssueComment{
+		Body: github.String(body),
+	})
+	if err != nil {
+		return fmt.Errorf("posting comment: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, name, conclusion, title, summary, headSHA string) error {
 	status := "completed"
 	_, _, err := c.client.Checks.CreateCheckRun(ctx, owner, repo, github.CreateCheckRunOptions{

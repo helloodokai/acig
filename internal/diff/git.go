@@ -76,23 +76,37 @@ func Parse(patch string) (*Diff, error) {
 		}
 
 		fd := FileDiff{
-			Path:     newPath(f),
-			IsNew:    f.OrigName == "/dev/null",
-			IsDelete: f.NewName == "/dev/null",
-			Patch:    hunksBody.String(),
+			Path:      newPath(f),
+			IsNew:     f.OrigName == "/dev/null",
+			IsDelete:  f.NewName == "/dev/null",
+			Patch:     hunksBody.String(),
+			DiffLines: make(map[int]bool),
 		}
 
 		for _, h := range f.Hunks {
+			// newLineNum tracks the new-file line number as we walk hunk lines.
+			newLineNum := int(h.NewStartLine)
 			lines := bytes.Split(h.Body, []byte{'\n'})
 			for _, l := range lines {
 				line := string(l)
 				switch {
 				case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
 					fd.Added = append(fd.Added, strings.TrimPrefix(line, "+"))
+					fd.DiffLines[newLineNum] = true
+					newLineNum++
 					d.Stats.LinesAdded++
 				case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
 					fd.Removed = append(fd.Removed, strings.TrimPrefix(line, "-"))
+					// Removed lines do not advance the new-file line counter.
 					d.Stats.LinesRemoved++
+				case strings.HasPrefix(line, "\\"):
+					// "No newline at end of file" marker — skip without advancing.
+				default:
+					// Context line (or empty trailing line from split).
+					if line != "" {
+						fd.DiffLines[newLineNum] = true
+						newLineNum++
+					}
 				}
 			}
 		}
