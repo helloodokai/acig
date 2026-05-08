@@ -236,17 +236,28 @@ func validateLine(fd *diff.FileDiff, requestedLine int) int {
 	if fd == nil || fd.IsDelete {
 		return 0
 	}
-	if fd.StartLine <= 0 || len(fd.Added) == 0 {
+	if len(fd.HunkRanges) == 0 {
 		return 0
 	}
-	lastAddedLine := fd.StartLine + len(fd.Added) - 1
-	if requestedLine > lastAddedLine {
-		return lastAddedLine
+	for _, hr := range fd.HunkRanges {
+		if requestedLine >= hr.Start && requestedLine <= hr.End {
+			return requestedLine
+		}
 	}
-	if requestedLine < fd.StartLine {
-		return fd.StartLine
+	nearest := fd.HunkRanges[0]
+	for _, hr := range fd.HunkRanges[1:] {
+		if abs(requestedLine-hr.Start) < abs(requestedLine-nearest.Start) {
+			nearest = hr
+		}
 	}
-	return requestedLine
+	return nearest.Start
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func verdictJSON(v *verdict.Verdict) (string, error) {

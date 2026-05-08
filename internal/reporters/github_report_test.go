@@ -50,7 +50,7 @@ func (m *mockGitHubClient) GetPRFileDiffs(ctx context.Context, owner, repo strin
 		return nil, m.getPRFileDiffsErr
 	}
 	return map[string]*diff.FileDiff{
-		"a.txt": {Path: "a.txt", StartLine: 1, Added: []string{"line1", "line2", "line3", "line4", "line5", "line6", "line7", "line8", "line9", "line10"}},
+		"a.txt": {Path: "a.txt", StartLine: 1, HunkRanges: []diff.HunkRange{{Start: 1, End: 15}}, Added: []string{"line1", "line2", "line3", "line4", "line5", "line6", "line7", "line8", "line9", "line10"}},
 	}, nil
 }
 

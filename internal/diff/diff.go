@@ -1,13 +1,19 @@
 package diff
 
+type HunkRange struct {
+	Start int
+	End   int
+}
+
 type FileDiff struct {
-	Path      string
-	StartLine int
-	Added     []string
-	Removed   []string
-	Patch     string
-	IsNew     bool
-	IsDelete  bool
+	Path       string
+	HunkRanges []HunkRange
+	StartLine  int
+	Added      []string
+	Removed    []string
+	Patch      string
+	IsNew      bool
+	IsDelete   bool
 }
 
 type Diff struct {
