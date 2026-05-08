@@ -196,10 +196,9 @@ func TestReport_UsesPRFilesFilter(t *testing.T) {
 	require.Equal(t, "a.txt", mock.createReviewCalls[0].comments[0].Path)
 }
 
-// TestReport_GeneralFindingsPostedAsSeparateComments verifies that findings
-// without a file are posted as individual PR comments (not buried in the
-// review body) so they are visible and actionable.
-func TestReport_GeneralFindingsPostedAsSeparateComments(t *testing.T) {
+// TestReport_TrulyGeneralFindingsPostedAsSeparateComments verifies that
+// findings with NO file (File="") are posted as individual PR comments.
+func TestReport_TrulyGeneralFindingsPostedAsSeparateComments(t *testing.T) {
 	mock := &mockGitHubClient{}
 	reporter := &GitHubReporter{client: mock}
 
@@ -208,7 +207,7 @@ func TestReport_GeneralFindingsPostedAsSeparateComments(t *testing.T) {
 		Risk:     verdict.RiskLow,
 		Findings: []verdict.Finding{
 			{File: "a.txt", LineStart: 10, Title: "Inline Issue"},
-			{File: "", LineStart: 0, Title: "General Issue", Detail: "Missing tests"},
+			{File: "", LineStart: 0, Title: "Truly General Issue", Detail: "No file at all"},
 		},
 	}
 
@@ -219,10 +218,40 @@ func TestReport_GeneralFindingsPostedAsSeparateComments(t *testing.T) {
 	require.Len(t, mock.createReviewCalls[0].comments, 1)
 	require.Equal(t, "a.txt", mock.createReviewCalls[0].comments[0].Path)
 
-	// General finding is posted as a separate comment.
+	// Only File="" findings become separate comments.
 	require.Len(t, mock.postedComments, 1)
-	require.Contains(t, mock.postedComments[0], "General Issue")
-	require.Contains(t, mock.postedComments[0], "Missing tests")
+	require.Contains(t, mock.postedComments[0], "Truly General Issue")
+}
+
+// TestReport_FileLevelFindingSnappedToFirstDiffLine verifies the core fix:
+// a finding that references a file but has LineStart=0 (e.g. a missing-test
+// finding from test_coverage_smell) is snapped to the first visible diff line
+// and posted as an inline review comment, NOT as a conversation comment.
+func TestReport_FileLevelFindingSnappedToFirstDiffLine(t *testing.T) {
+	mock := &mockGitHubClient{}
+	reporter := &GitHubReporter{client: mock}
+
+	v := &verdict.Verdict{
+		Decision: verdict.DecisionPass,
+		Risk:     verdict.RiskLow,
+		Findings: []verdict.Finding{
+			// File-level finding: LineStart=0, file is in the PR diff.
+			{File: "a.txt", LineStart: 0, Title: "Missing Test", Detail: "No unit test"},
+		},
+	}
+
+	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
+	require.NoError(t, err)
+
+	// Must appear as an inline review comment, NOT a conversation comment.
+	require.Len(t, mock.createReviewCalls[0].comments, 1)
+	c := mock.createReviewCalls[0].comments[0]
+	require.Equal(t, "a.txt", c.Path)
+	require.Equal(t, 1, c.Line) // snapped to first DiffLine (1)
+	require.Contains(t, c.Body, "Missing Test")
+
+	// No separate conversation comments.
+	require.Empty(t, mock.postedComments)
 }
 
 // TestReport_MissingFileFindingsPostedAsSeparateComments verifies that

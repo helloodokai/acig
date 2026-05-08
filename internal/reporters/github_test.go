@@ -41,14 +41,30 @@ func TestGroupFindings_EmptyFile(t *testing.T) {
 }
 
 func TestGroupFindings_ZeroLineStart(t *testing.T) {
+	// LineStart=0 findings with a file are now included in groupFindings so
+	// that buildReviewComments can snap them to the first diff line and post
+	// them as inline review comments instead of general conversation comments.
 	findings := []verdict.Finding{
 		{File: "a.txt", LineStart: 0, Title: "Zero line"},
 		{File: "b.txt", LineStart: 10, Title: "Valid line"},
 	}
 
 	groups := groupFindings(findings)
+	require.Len(t, groups, 2)
+	require.Equal(t, "a.txt", groups[0][0].File)
+	require.Equal(t, "b.txt", groups[1][0].File)
+}
+
+func TestGroupFindings_EmptyFileExcluded(t *testing.T) {
+	// Findings with no file at all are excluded — they go to general comments.
+	findings := []verdict.Finding{
+		{File: "", LineStart: 0, Title: "Truly general"},
+		{File: "a.txt", LineStart: 0, Title: "File-level"},
+	}
+
+	groups := groupFindings(findings)
 	require.Len(t, groups, 1)
-	require.Equal(t, "b.txt", groups[0][0].File)
+	require.Equal(t, "a.txt", groups[0][0].File)
 }
 
 func TestBuildReviewComments_FiltersNonPRFiles(t *testing.T) {

@@ -184,7 +184,7 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 	}
 
 	for _, findings := range fileFindings {
-		if len(findings) == 0 || findings[0].File == "" || findings[0].LineStart <= 0 {
+		if len(findings) == 0 || findings[0].File == "" {
 			continue
 		}
 		if len(prFilesSet) > 0 && !prFilesSet[findings[0].File] {
@@ -199,21 +199,37 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 			if fd == nil {
 				continue
 			}
-			validStart := validateLine(fd, lineStart)
-			if validStart <= 0 {
-				// Line is not in the diff — will be posted as a general comment instead.
-				continue
-			}
-			lineStart = validStart
-			if lineEnd > findings[0].LineStart {
-				validEnd := validateLine(fd, lineEnd)
-				if validEnd > 0 {
-					lineEnd = validEnd
+			if lineStart <= 0 {
+				// File-level finding (no specific line): snap to the first line
+				// visible in the diff so it appears as an inline review comment
+				// rather than a general conversation comment.
+				lineStart = snapToFirstDiffLine(fd)
+				if lineStart <= 0 {
+					continue // deleted file or no hunks — fall through to general
+				}
+				lineEnd = lineStart
+			} else {
+				validStart := validateLine(fd, lineStart)
+				if validStart <= 0 {
+					// Line is outside the diff — will be posted as a general comment.
+					continue
+				}
+				lineStart = validStart
+				if lineEnd > findings[0].LineStart {
+					validEnd := validateLine(fd, lineEnd)
+					if validEnd > 0 {
+						lineEnd = validEnd
+					} else {
+						lineEnd = lineStart
+					}
 				} else {
 					lineEnd = lineStart
 				}
-			} else {
-				lineEnd = lineStart
+			}
+		} else {
+			// No diff data available: require an explicit line number.
+			if lineStart <= 0 {
+				continue
 			}
 		}
 
@@ -244,15 +260,15 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 }
 
 // buildGeneralComments returns one markdown string per finding that cannot be
-// posted as an inline review comment: findings with no file, findings whose
-// file is not part of the PR, and findings whose line number falls outside the
-// visible diff hunks.
+// posted as an inline review comment: findings with no file, or whose file is
+// not part of the PR.  Findings with a file but no line number are now snapped
+// to the first visible diff line and posted inline instead.
 func buildGeneralComments(v *verdict.Verdict, prFilesSet map[string]bool, fileDiffs map[string]*diff.FileDiff) []string {
 	var comments []string
 	for _, f := range v.Findings {
 		reason := generalReason(f, prFilesSet, fileDiffs)
 		if reason == "" {
-			continue // will be (or already was) posted as an inline review comment
+			continue // handled as an inline review comment
 		}
 
 		var body strings.Builder
@@ -274,10 +290,15 @@ func buildGeneralComments(v *verdict.Verdict, prFilesSet map[string]bool, fileDi
 	return comments
 }
 
-// generalReason returns a short label explaining why a finding cannot be an
-// inline comment, or "" if it can be posted inline.
+// generalReason returns a short label explaining why a finding must be posted
+// as a conversation comment rather than an inline review comment, or "" when
+// it can (and will) be posted inline.
+//
+// A finding is general only when it has no file at all, or when its file is
+// not part of the PR.  Findings with a file but no specific line are snapped
+// to the first diff line and posted inline, so they are NOT considered general.
 func generalReason(f verdict.Finding, prFilesSet map[string]bool, fileDiffs map[string]*diff.FileDiff) string {
-	if f.File == "" || f.LineStart <= 0 {
+	if f.File == "" {
 		return "general"
 	}
 	if len(prFilesSet) > 0 && !prFilesSet[f.File] {
@@ -285,19 +306,33 @@ func generalReason(f verdict.Finding, prFilesSet map[string]bool, fileDiffs map[
 	}
 	if fileDiffs != nil {
 		fd := fileDiffs[f.File]
-		if fd == nil || validateLine(fd, f.LineStart) <= 0 {
+		if fd == nil {
+			return "outside diff"
+		}
+		if f.LineStart <= 0 {
+			// File-level finding: can we snap it to a diff line?
+			if snapToFirstDiffLine(fd) <= 0 {
+				return "outside diff"
+			}
+			return "" // will be snapped and posted inline
+		}
+		if validateLine(fd, f.LineStart) <= 0 {
 			return "outside diff"
 		}
 	}
 	return ""
 }
 
+// groupFindings groups findings by file+line so each unique location becomes
+// one inline review comment.  Findings with LineStart=0 are included (grouped
+// under key "file:0") and will be snapped to the first diff line when the
+// comment is built.  Only findings with no file are excluded here.
 func groupFindings(findings []verdict.Finding) [][]verdict.Finding {
 	groups := map[string][]verdict.Finding{}
 	var order []string
 	for _, f := range findings {
-		if f.File == "" || f.LineStart <= 0 {
-			continue
+		if f.File == "" {
+			continue // no file → general comment, not inline
 		}
 		key := fmt.Sprintf("%s:%d", f.File, f.LineStart)
 		if _, exists := groups[key]; !exists {
@@ -311,6 +346,29 @@ func groupFindings(findings []verdict.Finding) [][]verdict.Finding {
 		result = append(result, groups[key])
 	}
 	return result
+}
+
+// snapToFirstDiffLine returns the smallest new-file line number visible in
+// any of the file's diff hunks.  It is used to anchor file-level findings
+// (LineStart=0) as inline review comments at the top of the changed region.
+func snapToFirstDiffLine(fd *diff.FileDiff) int {
+	if fd == nil || fd.IsDelete {
+		return 0
+	}
+	if len(fd.DiffLines) > 0 {
+		min := int(^uint(0) >> 1)
+		for line := range fd.DiffLines {
+			if line < min {
+				min = line
+			}
+		}
+		return min
+	}
+	// Legacy fallback for FileDiff structs without DiffLines (e.g. in tests).
+	if len(fd.Added) > 0 {
+		return 1
+	}
+	return 0
 }
 
 // validateLine returns the line number to use for a GitHub PR review inline
