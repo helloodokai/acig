@@ -36,6 +36,7 @@ type promptData struct {
 	CriticalPaths string
 	CriticResults string
 	MaxFindings   int
+	ChangedFiles  string
 }
 
 func runCritic(
@@ -221,11 +222,21 @@ func diffToPromptData(d *diff.Diff, cfg *Context) promptData {
 		stats += fmt.Sprintf(" (showing first ~%d chars)", maxDiffChars)
 	}
 
+	changedFiles := ""
+	if len(d.Files) > 0 {
+		var paths []string
+		for _, f := range d.Files {
+			paths = append(paths, f.Path)
+		}
+		changedFiles = strings.Join(paths, ", ")
+	}
+
 	return promptData{
 		Patch:         patch,
 		Stats:         stats,
 		CriticalPaths: criticalPaths,
 		MaxFindings:   8,
+		ChangedFiles:  changedFiles,
 	}
 }
 

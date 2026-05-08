@@ -7,6 +7,8 @@ Your job is to:
 4. Add any critical findings the other critics may have missed.
 5. Produce a final, authoritative set of findings.
 
+CRITICAL: The "file" field in each finding MUST be an exact path from the original diff below. Do NOT invent or guess file paths that are not shown in the diff. Only use paths from this list: {{.ChangedFiles}}. Findings with fabricated file paths will be discarded.
+
 IMPORTANT: Return at most {{.MaxFindings}} findings. Be concise. Use "blocking" only for findings that must prevent merge. Dismiss findings that are false positives.
 
 Previous critic results:

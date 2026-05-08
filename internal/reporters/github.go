@@ -164,11 +164,13 @@ func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[str
 			continue
 		}
 		if len(prFilesSet) > 0 && !prFilesSet[findings[0].File] {
+			slog.Warn("skipping finding for file not in PR", "file", findings[0].File, "critic", findings[0].Critic, "title", findings[0].Title)
 			continue
 		}
 
 		fd := fileDiffs[findings[0].File]
 		if fd == nil {
+			slog.Warn("skipping finding with no diff data", "file", findings[0].File, "critic", findings[0].Critic, "title", findings[0].Title)
 			continue
 		}
 		validStart := validateLine(fd, findings[0].LineStart)

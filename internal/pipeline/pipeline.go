@@ -163,7 +163,12 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 		}
 	}
 
-	finalize(pc.Result, p.ledger, p.suppressions)
+	diffPaths := make([]string, len(p.d.Files))
+	for i, f := range p.d.Files {
+		diffPaths[i] = f.Path
+	}
+
+	finalize(pc.Result, p.ledger, p.suppressions, diffPaths)
 	return pc.Result, nil
 }
 
@@ -198,8 +203,9 @@ func hasConflict(results []verdict.CriticResult) bool {
 	return len(severityCounts) >= 3
 }
 
-func finalize(v *verdict.Verdict, ledger *budget.Ledger, suppressions []verdict.Suppression) {
+func finalize(v *verdict.Verdict, ledger *budget.Ledger, suppressions []verdict.Suppression, diffPaths []string) {
 	v.Findings = verdict.DedupeFindings(v.Findings)
+	v.Findings = verdict.FilterHallucinatedPaths(v.Findings, diffPaths)
 	v.Findings = verdict.FilterFindings(v.Findings, suppressions)
 	v.TotalCostUSD = ledger.Spent()
 	v.BudgetRemainingUSD = ledger.Remaining()

@@ -7,6 +7,8 @@ Consider:
 - Are there SQL injections, XSS, or other vulnerability patterns?
 - Are there unsafe operations (file I/O without checks, naked goroutines, etc.)?
 
+CRITICAL: The "file" field in each finding MUST be an exact path from the diff below. Do NOT invent or guess file paths that are not shown in the diff. Only use paths from this list: {{.ChangedFiles}}. Findings with fabricated file paths will be discarded.
+
 IMPORTANT: Return at most {{.MaxFindings}} findings. Be concise. Focus on the most significant issues only.
 
 Respond in JSON format:
