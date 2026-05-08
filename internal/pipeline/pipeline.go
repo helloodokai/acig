@@ -205,8 +205,16 @@ func hasConflict(results []verdict.CriticResult) bool {
 
 func finalize(v *verdict.Verdict, ledger *budget.Ledger, suppressions []verdict.Suppression, diffPaths []string) {
 	v.Findings = verdict.DedupeFindings(v.Findings)
-	v.Findings = verdict.FilterHallucinatedPaths(v.Findings, diffPaths)
-	v.Findings = verdict.FilterFindings(v.Findings, suppressions)
+
+	inDiff, dangling, hallucinated := verdict.CategorizeFindingsByPath(v.Findings, diffPaths)
+	dropped := len(hallucinated)
+
+	if dropped > 0 {
+		slog.Warn("filtered hallucinated file paths", "count", dropped, "dangling_count", len(dangling))
+	}
+
+	v.DanglingFindings = verdict.FilterFindings(dangling, suppressions)
+	v.Findings = verdict.FilterFindings(inDiff, suppressions)
 	v.TotalCostUSD = ledger.Spent()
 	v.BudgetRemainingUSD = ledger.Remaining()
 	v.Risk = computeRisk(v.Findings, v.Risk)

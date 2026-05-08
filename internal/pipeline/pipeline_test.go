@@ -85,12 +85,12 @@ func TestComputeRisk(t *testing.T) {
 	}
 }
 
-func TestFinalize_FilterHallucinatedPaths(t *testing.T) {
+func TestFinalize_CategorizePaths(t *testing.T) {
 	v := &verdict.Verdict{
 		Findings: []verdict.Finding{
 			{File: "apps/backend/src/lib/tools/plan-tools.ts", LineStart: 10, Severity: verdict.SeverityMedium, Title: "real issue"},
+			{File: "apps/backend/src/lib/tools/plan-tools.test.ts", LineStart: 0, Severity: verdict.SeverityLow, Critic: "test_coverage_smell", Title: "missing tests"},
 			{File: "service/get_plan_context.go", LineStart: 5, Severity: verdict.SeverityHigh, Critic: "perf_smell", Title: "hallucinated Go file"},
-			{File: "src/services/planContextService.js", LineStart: 20, Severity: verdict.SeverityLow, Critic: "test_coverage_smell", Title: "hallucinated JS file"},
 		},
 	}
 	ledger, _ := budget.NewLedger(1.0)
@@ -100,6 +100,8 @@ func TestFinalize_FilterHallucinatedPaths(t *testing.T) {
 
 	require.Len(t, v.Findings, 1)
 	require.Equal(t, "apps/backend/src/lib/tools/plan-tools.ts", v.Findings[0].File)
+	require.Len(t, v.DanglingFindings, 1)
+	require.Equal(t, "apps/backend/src/lib/tools/plan-tools.test.ts", v.DanglingFindings[0].File)
 }
 
 func TestFinalize_EmptyDiffPathsPreservesAll(t *testing.T) {

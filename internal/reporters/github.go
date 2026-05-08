@@ -129,18 +129,61 @@ func (r *GitHubReporter) dismissOldReviews(ctx context.Context, owner, repo stri
 func (r *GitHubReporter) buildReviewBody(v *verdict.Verdict) string {
 	var body strings.Builder
 	body.WriteString(acigMarker + "\n")
-	body.WriteString(fmt.Sprintf("## acig: %s | risk=%s | %d finding(s) | $%.4f\n\n", v.Decision, v.Risk, len(v.Findings), v.TotalCostUSD))
 
-	body.WriteString("| Severity | Critic | Title | File |\n|----------|--------|-------|------|\n")
-	for _, f := range v.Findings {
-		file := f.File
-		if file == "" {
-			file = "—"
+	decisionEmoji := "✅"
+	switch v.Decision {
+	case verdict.DecisionWarn:
+		decisionEmoji = "⚠️"
+	case verdict.DecisionBlock:
+		decisionEmoji = "🚫"
+	}
+	body.WriteString(fmt.Sprintf("## %s acig verdict: %s | risk=%s | %d finding(s) | $%.4f\n\n",
+		decisionEmoji, strings.ToUpper(string(v.Decision)), v.Risk, len(v.Findings)+len(v.DanglingFindings), v.TotalCostUSD))
+
+	if len(v.Findings) > 0 {
+		body.WriteString("### Inline Findings\n\n")
+		body.WriteString("| Severity | Critic | Title | File |\n|----------|--------|-------|------|\n")
+		for _, f := range v.Findings {
+			file := f.File
+			if file == "" {
+				file = "—"
+			}
+			body.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", severityEmoji(f.Severity), f.Critic, f.Title, file))
 		}
-		body.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", f.Severity, f.Critic, f.Title, file))
+		body.WriteString("\n")
 	}
 
-	body.WriteString("\n<details>\n<summary>Verdict JSON</summary>\n\n```json\n")
+	if len(v.DanglingFindings) > 0 {
+		body.WriteString("### Observations (files not in this PR)\n\n")
+		body.WriteString("The following findings reference files not changed in this PR. They are legitimate suggestions but cannot be placed as inline review comments.\n\n")
+		for _, f := range v.DanglingFindings {
+			body.WriteString(fmt.Sprintf("- %s **%s** (%s)%s\n",
+				severityEmoji(f.Severity), f.Title, f.Critic, formatFileNote(f)))
+			if f.Detail != "" {
+				body.WriteString(fmt.Sprintf("  \n  %s\n", f.Detail))
+			}
+			if f.SuggestedFix != "" {
+				body.WriteString(fmt.Sprintf("  \n  **Suggested fix:** %s\n", f.SuggestedFix))
+			}
+		}
+		body.WriteString("\n")
+	}
+
+	if len(v.CriticResults) > 0 {
+		body.WriteString("<details>\n<summary>Critic Results</summary>\n\n")
+		body.WriteString("| Critic | Model | Findings | Cost | Duration |\n|--------|-------|----------|------|----------|\n")
+		for _, cr := range v.CriticResults {
+			errIndicator := ""
+			if cr.Error != "" {
+				errIndicator = " ⚠️"
+			}
+			body.WriteString(fmt.Sprintf("| %s%s | %s | %d | $%.4f | %dms |\n",
+				cr.Critic, errIndicator, cr.Model, len(cr.Findings), cr.CostUSD, cr.DurationMS))
+		}
+		body.WriteString("\n</details>\n\n")
+	}
+
+	body.WriteString("<details>\n<summary>Verdict JSON</summary>\n\n```json\n")
 	jsonBody, err := verdictJSON(v)
 	if err == nil {
 		body.WriteString(jsonBody)
@@ -148,6 +191,30 @@ func (r *GitHubReporter) buildReviewBody(v *verdict.Verdict) string {
 	body.WriteString("\n```\n</details>\n")
 
 	return body.String()
+}
+
+func severityEmoji(s verdict.Severity) string {
+	switch s {
+	case verdict.SeverityBlocking:
+		return "🚫"
+	case verdict.SeverityHigh:
+		return "🔴"
+	case verdict.SeverityMedium:
+		return "🟡"
+	case verdict.SeverityLow:
+		return "🟢"
+	case verdict.SeverityInfo:
+		return "ℹ️"
+	default:
+		return string(s)
+	}
+}
+
+func formatFileNote(f verdict.Finding) string {
+	if f.File == "" {
+		return ""
+	}
+	return fmt.Sprintf(" — `%s`", f.File)
 }
 
 func buildReviewComments(v *verdict.Verdict, prFiles []string, fileDiffs map[string]*diff.FileDiff) []githubclient.ReviewComment {
