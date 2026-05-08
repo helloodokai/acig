@@ -26,6 +26,7 @@ type GitHubClient interface {
 	ListReviews(ctx context.Context, owner, repo string, prNumber int) ([]*github.PullRequestReview, error)
 	DeleteReviewComments(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error
 	DismissReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64, message string) error
+	DeletePendingReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error
 	CreateReview(ctx context.Context, owner, repo string, prNumber int, body string, comments []githubclient.ReviewComment, event string) error
 	PostStickyComment(ctx context.Context, owner, repo string, prNumber int, marker, body string) error
 	PostComment(ctx context.Context, owner, repo string, prNumber int, body string) error
@@ -38,7 +39,7 @@ func NewGitHubReporter(client GitHubClient, headSHA string) *GitHubReporter {
 }
 
 func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, repo string, prNumber int) error {
-	if err := r.dismissOldReviews(ctx, owner, repo, prNumber); err != nil {
+	if err := r.cleanupOldReviews(ctx, owner, repo, prNumber); err != nil {
 		slog.Warn("failed to dismiss old reviews", "error", err)
 	}
 
@@ -113,7 +114,7 @@ func (r *GitHubReporter) Report(ctx context.Context, v *verdict.Verdict, owner, 
 	return nil
 }
 
-func (r *GitHubReporter) dismissOldReviews(ctx context.Context, owner, repo string, prNumber int) error {
+func (r *GitHubReporter) cleanupOldReviews(ctx context.Context, owner, repo string, prNumber int) error {
 	reviews, err := r.client.ListReviews(ctx, owner, repo, prNumber)
 	if err != nil {
 		return err
@@ -124,17 +125,26 @@ func (r *GitHubReporter) dismissOldReviews(ctx context.Context, owner, repo stri
 			continue
 		}
 		state := rev.GetState()
-		if state != "CHANGES_REQUESTED" && state != "APPROVED" {
-			slog.Info("skipping dismiss of non-dismissable review", "id", rev.GetID(), "state", state)
-			continue
-		}
-		slog.Info("dismissing old acig review", "id", rev.GetID(), "state", state)
+		slog.Info("cleaning up old acig review", "id", rev.GetID(), "state", state)
+
+		// Always delete inline review comments regardless of review state
+		// so they don't pile up across re-runs.
 		if err := r.client.DeleteReviewComments(ctx, owner, repo, prNumber, rev.GetID()); err != nil {
-			slog.Warn("failed to delete old review comments", "error", err)
+			slog.Warn("failed to delete review comments", "id", rev.GetID(), "error", err)
 		}
-		msg := "acig re-run: replacing with updated review"
-		if err := r.client.DismissReview(ctx, owner, repo, prNumber, rev.GetID(), msg); err != nil {
-			slog.Warn("failed to dismiss old review", "id", rev.GetID(), "error", err)
+
+		switch state {
+		case "CHANGES_REQUESTED", "APPROVED":
+			msg := "acig re-run: replacing with updated review"
+			if err := r.client.DismissReview(ctx, owner, repo, prNumber, rev.GetID(), msg); err != nil {
+				slog.Warn("failed to dismiss review", "id", rev.GetID(), "error", err)
+			}
+		case "PENDING":
+			if err := r.client.DeletePendingReview(ctx, owner, repo, prNumber, rev.GetID()); err != nil {
+				slog.Warn("failed to delete pending review", "id", rev.GetID(), "error", err)
+			}
+		// COMMENTED reviews cannot be dismissed or deleted via the API;
+		// we've already removed their inline comments above, which is sufficient.
 		}
 	}
 	return nil

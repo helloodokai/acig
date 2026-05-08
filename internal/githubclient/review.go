@@ -28,6 +28,14 @@ func (c *Client) DismissReview(ctx context.Context, owner, repo string, prNumber
 	return nil
 }
 
+func (c *Client) DeletePendingReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error {
+	_, _, err := c.client.PullRequests.DeletePendingReview(ctx, owner, repo, prNumber, reviewID)
+	if err != nil {
+		return fmt.Errorf("deleting pending review %d: %w", reviewID, err)
+	}
+	return nil
+}
+
 func (c *Client) DeleteReviewComments(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error {
 	comments, _, err := c.client.PullRequests.ListReviewComments(ctx, owner, repo, prNumber, reviewID, &github.ListOptions{PerPage: 100})
 	if err != nil {

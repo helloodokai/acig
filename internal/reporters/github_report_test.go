@@ -13,14 +13,19 @@ import (
 )
 
 type mockGitHubClient struct {
-	createReviewCalls      []createReviewCall
-	createReviewFailAt     int
-	postStickyCommentErr   error
-	listReviewsErr         error
-	deleteReviewCommentsErr error
-	dismissReviewErr       error
-	getPRFileDiffsErr      error
-	postedComments         []string
+	createReviewCalls        []createReviewCall
+	createReviewFailAt       int
+	postStickyCommentErr     error
+	listReviewsErr           error
+	deleteReviewCommentsErr  error
+	dismissReviewErr         error
+	deletePendingReviewErr    error
+	getPRFileDiffsErr        error
+	postedComments           []string
+	deletedReviewIDs         []int64
+	dismissedReviewIDs       []int64
+	deletedPendingReviewIDs  []int64
+	reviews                  []*github.PullRequestReview
 }
 
 type createReviewCall struct {
@@ -31,15 +36,22 @@ func (m *mockGitHubClient) ListReviews(ctx context.Context, owner, repo string, 
 	if m.listReviewsErr != nil {
 		return nil, m.listReviewsErr
 	}
-	return nil, nil
+	return m.reviews, nil
 }
 
 func (m *mockGitHubClient) DeleteReviewComments(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error {
+	m.deletedReviewIDs = append(m.deletedReviewIDs, reviewID)
 	return m.deleteReviewCommentsErr
 }
 
 func (m *mockGitHubClient) DismissReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64, message string) error {
+	m.dismissedReviewIDs = append(m.dismissedReviewIDs, reviewID)
 	return m.dismissReviewErr
+}
+
+func (m *mockGitHubClient) DeletePendingReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error {
+	m.deletedPendingReviewIDs = append(m.deletedPendingReviewIDs, reviewID)
+	return m.deletePendingReviewErr
 }
 
 func (m *mockGitHubClient) ListPRFiles(ctx context.Context, owner, repo string, prNumber int) ([]string, error) {
@@ -271,4 +283,82 @@ func TestReport_OutOfDiffLineFindingsPostedAsSeparateComments(t *testing.T) {
 	require.Len(t, mock.postedComments, 1)
 	require.Contains(t, mock.postedComments[0], "Out-of-diff Issue")
 	require.Contains(t, mock.postedComments[0], "outside diff")
+}
+
+// TestCleanupOldReviews_DeletesCommentsForAllStates verifies that cleanup
+// deletes inline comments for COMMENT-state reviews (not just
+// CHANGES_REQUESTED/APPROVED) and also dismisses/disposes reviews correctly.
+func TestCleanupOldReviews_DeletesCommentsForAllStates(t *testing.T) {
+	commentedReviewBody := "<!-- acig:review -->\n## acig: pass"
+	approvedReviewBody := "<!-- acig:review -->\n## acig: block"
+	pendingReviewBody := "<!-- acig:review -->\n## acig: pending"
+
+	tests := []struct {
+		name           string
+		reviews        []*github.PullRequestReview
+		wantDeleted    []int64
+		wantDismissed  []int64
+		wantPendingDel []int64
+	}{
+		{
+			name: "COMMENT review has comments deleted but is not dismissed",
+			reviews: []*github.PullRequestReview{
+				{
+					ID:    github.Int64(101),
+					Body:  &commentedReviewBody,
+					State: github.String("COMMENTED"),
+				},
+			},
+			wantDeleted:   []int64{101},
+			wantDismissed: nil,
+		},
+		{
+			name: "APPROVED review has comments deleted and is dismissed",
+			reviews: []*github.PullRequestReview{
+				{
+					ID:    github.Int64(202),
+					Body:  &approvedReviewBody,
+					State: github.String("APPROVED"),
+				},
+			},
+			wantDeleted:   []int64{202},
+			wantDismissed: []int64{202},
+		},
+		{
+			name: "PENDING review is deleted entirely",
+			reviews: []*github.PullRequestReview{
+				{
+					ID:    github.Int64(303),
+					Body:  &pendingReviewBody,
+					State: github.String("PENDING"),
+				},
+			},
+			wantDeleted:    []int64{303},
+			wantPendingDel: []int64{303},
+		},
+		{
+			name: "non-acig reviews are left untouched",
+			reviews: []*github.PullRequestReview{
+				{
+					ID:    github.Int64(999),
+					Body:  github.String("some other review"),
+					State: github.String("COMMENTED"),
+				},
+			},
+			wantDeleted:   nil,
+			wantDismissed: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockGitHubClient{reviews: tt.reviews}
+			reporter := &GitHubReporter{client: mock}
+			err := reporter.cleanupOldReviews(context.Background(), "owner", "repo", 1)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantDeleted, mock.deletedReviewIDs)
+			require.Equal(t, tt.wantDismissed, mock.dismissedReviewIDs)
+			require.Equal(t, tt.wantPendingDel, mock.deletedPendingReviewIDs)
+		})
+	}
 }
