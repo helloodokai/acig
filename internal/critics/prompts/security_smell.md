@@ -12,6 +12,8 @@ Focus on:
 - Authorization issues (missing permission checks)
 - Sensitive data exposure in logs or responses
 
+CRITICAL: The "file" field in each finding MUST be an exact path from the diff below. Do NOT invent or guess file paths that are not shown in the diff. Only use paths from this list: {{.ChangedFiles}}. Findings with fabricated file paths will be discarded.
+
 IMPORTANT: Return at most {{.MaxFindings}} findings. Be concise. Only report GENUINE security concerns, not theoretical ones.
 Use "blocking" severity only for exploitable vulnerabilities. If no issues, return: `{"findings": []}`
 

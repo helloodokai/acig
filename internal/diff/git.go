@@ -83,6 +83,15 @@ func Parse(patch string) (*Diff, error) {
 		}
 
 		for _, h := range f.Hunks {
+			if h.NewStartLine > 0 && h.NewLines > 0 {
+				fd.HunkRanges = append(fd.HunkRanges, HunkRange{
+					Start: int(h.NewStartLine),
+					End:   int(h.NewStartLine) + int(h.NewLines) - 1,
+				})
+			}
+			if fd.StartLine == 0 && h.NewStartLine > 0 {
+				fd.StartLine = int(h.NewStartLine)
+			}
 			lines := bytes.Split(h.Body, []byte{'\n'})
 			for _, l := range lines {
 				line := string(l)

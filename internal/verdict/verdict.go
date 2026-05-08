@@ -60,6 +60,7 @@ type Verdict struct {
 	Decision           Decision       `json:"decision"`
 	Summary            string         `json:"summary"`
 	Findings           []Finding      `json:"findings"`
+	DanglingFindings   []Finding      `json:"dangling_findings,omitempty"`
 	CriticResults      []CriticResult `json:"critic_results"`
 	TotalCostUSD       float64        `json:"total_cost_usd"`
 	TotalDurationMS    int64          `json:"total_duration_ms"`

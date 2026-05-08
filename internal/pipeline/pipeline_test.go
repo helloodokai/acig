@@ -3,7 +3,9 @@ package pipeline
 import (
 	"testing"
 
+	"github.com/helloodokai/acig/internal/budget"
 	"github.com/helloodokai/acig/internal/verdict"
+	"github.com/stretchr/testify/require"
 )
 
 func TestComputeDecision(t *testing.T) {
@@ -81,6 +83,56 @@ func TestComputeRisk(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFinalize_CategorizePaths(t *testing.T) {
+	v := &verdict.Verdict{
+		Findings: []verdict.Finding{
+			{File: "apps/backend/src/lib/tools/plan-tools.ts", LineStart: 10, Severity: verdict.SeverityMedium, Title: "real issue"},
+			{File: "apps/backend/src/lib/tools/plan-tools.test.ts", LineStart: 0, Severity: verdict.SeverityLow, Critic: "test_coverage_smell", Title: "missing tests"},
+			{File: "service/get_plan_context.go", LineStart: 5, Severity: verdict.SeverityHigh, Critic: "perf_smell", Title: "hallucinated Go file"},
+		},
+	}
+	ledger, _ := budget.NewLedger(1.0)
+	diffPaths := []string{"apps/backend/src/lib/tools/plan-tools.ts", ".charters/ch-2026-05-07-12f7a9.spec.md"}
+
+	finalize(v, ledger, nil, diffPaths)
+
+	require.Len(t, v.Findings, 1)
+	require.Equal(t, "apps/backend/src/lib/tools/plan-tools.ts", v.Findings[0].File)
+	require.Len(t, v.DanglingFindings, 1)
+	require.Equal(t, "apps/backend/src/lib/tools/plan-tools.test.ts", v.DanglingFindings[0].File)
+}
+
+func TestFinalize_EmptyDiffPathsPreservesAll(t *testing.T) {
+	v := &verdict.Verdict{
+		Findings: []verdict.Finding{
+			{File: "any/file.go", LineStart: 1, Severity: verdict.SeverityLow, Title: "some issue"},
+		},
+	}
+	ledger, _ := budget.NewLedger(1.0)
+
+	finalize(v, ledger, nil, nil)
+
+	require.Len(t, v.Findings, 1)
+}
+
+func TestFinalize_SuppressionsAppliedAfterPathFilter(t *testing.T) {
+	suppressions := []verdict.Suppression{
+		{Critic: "perf_smell", Title: "real issue", Reason: "known false positive"},
+	}
+	v := &verdict.Verdict{
+		Findings: []verdict.Finding{
+			{File: "real.ts", LineStart: 10, Severity: verdict.SeverityHigh, Critic: "perf_smell", Title: "real issue"},
+			{File: "hallucinated.go", LineStart: 5, Severity: verdict.SeverityMedium, Critic: "perf_smell", Title: "hallucinated"},
+		},
+	}
+	ledger, _ := budget.NewLedger(1.0)
+	diffPaths := []string{"real.ts"}
+
+	finalize(v, ledger, suppressions, diffPaths)
+
+	require.Len(t, v.Findings, 0)
 }
 
 func TestClassifyRisk(t *testing.T) {

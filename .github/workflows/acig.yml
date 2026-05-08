@@ -19,23 +19,31 @@ jobs:
       - name: Get GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v2
-        if: ${{ secrets.ACIG_APP_ID != '' && secrets.ACIG_APP_PRIVATE_KEY != '' }}
+        if: ${{ vars.ACIG_APP_ID != '' }}
         with:
-          app-id: ${{ secrets.ACIG_APP_ID }}
+          app-id: ${{ vars.ACIG_APP_ID }}
           private-key: ${{ secrets.ACIG_APP_PRIVATE_KEY }}
 
       - name: Install acig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ACIG_VERSION="1.4.1"
-          RELEASE_URL="https://github.com/helloodokai/acig/releases/download/v${ACIG_VERSION}"
+          ACIG_VERSION=$(gh release view --repo helloodokai/acig --json tagName --jq '.tagName' 2>/dev/null || echo "")
+          if [ -z "$ACIG_VERSION" ]; then
+            echo "::error::could not determine latest acig version"
+            exit 1
+          fi
+          echo "Using ACIG version ${ACIG_VERSION}"
 
-          curl -sL "${RELEASE_URL}/checksums.txt" -o /tmp/checksums.txt
-          curl -sL "${RELEASE_URL}/acig_linux_amd64.tar.gz" -o /tmp/acig_linux_amd64.tar.gz
+          gh release download "${ACIG_VERSION}" --repo helloodokai/acig -p "checksums.txt" -p "acig_linux_amd64.tar.gz" -D /tmp
 
           cd /tmp
-          EXPECTED=$(grep acig_linux_amd64.tar.gz checksums.txt | awk '{print $1}')
+          EXPECTED=$(grep "acig_linux_amd64.tar.gz" checksums.txt | awk '{print $1}')
+          if [ -z "$EXPECTED" ]; then
+            echo "::error::checksums.txt does not contain acig_linux_amd64.tar.gz"
+            cat checksums.txt
+            exit 1
+          fi
           ACTUAL=$(sha256sum acig_linux_amd64.tar.gz | awk '{print $1}')
           if [ "$EXPECTED" != "$ACTUAL" ]; then
             echo "::error::checksum mismatch: expected $EXPECTED got $ACTUAL"

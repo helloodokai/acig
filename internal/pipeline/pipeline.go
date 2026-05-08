@@ -163,7 +163,12 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 		}
 	}
 
-	finalize(pc.Result, p.ledger, p.suppressions)
+	diffPaths := make([]string, len(p.d.Files))
+	for i, f := range p.d.Files {
+		diffPaths[i] = f.Path
+	}
+
+	finalize(pc.Result, p.ledger, p.suppressions, diffPaths)
 	return pc.Result, nil
 }
 
@@ -198,9 +203,18 @@ func hasConflict(results []verdict.CriticResult) bool {
 	return len(severityCounts) >= 3
 }
 
-func finalize(v *verdict.Verdict, ledger *budget.Ledger, suppressions []verdict.Suppression) {
+func finalize(v *verdict.Verdict, ledger *budget.Ledger, suppressions []verdict.Suppression, diffPaths []string) {
 	v.Findings = verdict.DedupeFindings(v.Findings)
-	v.Findings = verdict.FilterFindings(v.Findings, suppressions)
+
+	inDiff, dangling, hallucinated := verdict.CategorizeFindingsByPath(v.Findings, diffPaths)
+	dropped := len(hallucinated)
+
+	if dropped > 0 {
+		slog.Warn("filtered hallucinated file paths", "count", dropped, "dangling_count", len(dangling))
+	}
+
+	v.DanglingFindings = verdict.FilterFindings(dangling, suppressions)
+	v.Findings = verdict.FilterFindings(inDiff, suppressions)
 	v.TotalCostUSD = ledger.Spent()
 	v.BudgetRemainingUSD = ledger.Remaining()
 	v.Risk = computeRisk(v.Findings, v.Risk)

@@ -7,6 +7,8 @@ Focus on:
 - New API endpoints without integration tests
 - Complex conditions needing boundary tests
 
+CRITICAL: The "file" field in each finding MUST be an exact path from the diff below. Do NOT invent or guess file paths that are not shown in the diff. Only use paths from this list: {{.ChangedFiles}}. Findings with fabricated file paths will be discarded.
+
 IMPORTANT: Return at most {{.MaxFindings}} findings. Be concise. Only report meaningful gaps.
 Trivial changes (constants, comments) don't need tests. If coverage is adequate, return: `{"findings": []}`
 
