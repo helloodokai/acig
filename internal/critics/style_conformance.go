@@ -30,5 +30,5 @@ func (sc *StyleConformance) Run(ctx context.Context, d *diff.Diff, pc *Context) 
 	data := diffToPromptData(d, pc)
 	return runCritic(ctx, sc.id, sc.tier, styleConformancePrompt, data, client, modelName, func(tokensIn, tokensOut int) float64 {
 		return pc.Budget.Record("ollama_cloud", modelName, tokensIn, tokensOut)
-	})
+	}, d, findingsSchema)
 }

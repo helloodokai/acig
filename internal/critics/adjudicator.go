@@ -2,8 +2,8 @@ package critics
 
 import (
 	"context"
-	"encoding/json"
 	_ "embed"
+	"encoding/json"
 	"strings"
 
 	"github.com/helloodokai/acig/internal/diff"
@@ -36,12 +36,17 @@ func (a *Adjudicator) Run(ctx context.Context, d *diff.Diff, pc *Context) (*verd
 	}
 
 	data := promptData{
-		Patch:         truncateIfLong(d.RawPatch),
-		CriticResults: strings.Join(results, "\n\n"),
-		MaxFindings:   15,
+		Patch:          truncateIfLong(d.RawPatch),
+		NumberedDiff:   buildNumberedDiff(d, maxDiffChars),
+		FileSummary:    buildFileSummary(d),
+		ValidLines:     buildValidLines(d),
+		CriticResults:  strings.Join(results, "\n\n"),
+		SeverityRubric: severityRubric(),
+		OutputContract: outputContract(),
+		MaxFindings:    15,
 	}
 
 	return runCritic(ctx, a.id, a.tier, adjudicatorPrompt, data, client, modelName, func(tokensIn, tokensOut int) float64 {
 		return pc.Budget.Record("anthropic", modelName, tokensIn, tokensOut)
-	})
+	}, d, findingsSchema)
 }

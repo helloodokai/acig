@@ -13,23 +13,31 @@ import (
 )
 
 type mockGitHubClient struct {
-	createReviewCalls        []createReviewCall
-	createReviewFailAt       int
-	postStickyCommentErr     error
-	listReviewsErr           error
-	deleteReviewCommentsErr  error
-	dismissReviewErr         error
-	deletePendingReviewErr    error
-	getPRFileDiffsErr        error
-	postedComments           []string
-	deletedReviewIDs         []int64
-	dismissedReviewIDs       []int64
-	deletedPendingReviewIDs  []int64
-	reviews                  []*github.PullRequestReview
+	createReviewCalls       []createReviewCall
+	createReviewFailAt      int
+	postStickyCommentErr    error
+	postStickyBodies        []string
+	listReviewsErr          error
+	deleteReviewCommentsErr error
+	dismissReviewErr        error
+	deletePendingReviewErr  error
+	editReviewErr           error
+	getPRFileDiffsErr       error
+	prFiles                 []string
+	fileDiffs               map[string]*diff.FileDiff
+	postedComments          []string
+	deletedReviewIDs        []int64
+	dismissedReviewIDs      []int64
+	deletedPendingReviewIDs []int64
+	editedReviewIDs         []int64
+	editedReviewBodies      []string
+	reviews                 []*github.PullRequestReview
 }
 
 type createReviewCall struct {
+	body     string
 	comments []githubclient.ReviewComment
+	event    string
 }
 
 func (m *mockGitHubClient) ListReviews(ctx context.Context, owner, repo string, prNumber int) ([]*github.PullRequestReview, error) {
@@ -54,7 +62,16 @@ func (m *mockGitHubClient) DeletePendingReview(ctx context.Context, owner, repo 
 	return m.deletePendingReviewErr
 }
 
+func (m *mockGitHubClient) EditReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64, body string) error {
+	m.editedReviewIDs = append(m.editedReviewIDs, reviewID)
+	m.editedReviewBodies = append(m.editedReviewBodies, body)
+	return m.editReviewErr
+}
+
 func (m *mockGitHubClient) ListPRFiles(ctx context.Context, owner, repo string, prNumber int) ([]string, error) {
+	if m.prFiles != nil {
+		return m.prFiles, nil
+	}
 	return []string{"a.txt"}, nil
 }
 
@@ -62,7 +79,10 @@ func (m *mockGitHubClient) GetPRFileDiffs(ctx context.Context, owner, repo strin
 	if m.getPRFileDiffsErr != nil {
 		return nil, m.getPRFileDiffsErr
 	}
-	// Build DiffLines covering lines 1-10 so that LineStart:10 is valid.
+	if m.fileDiffs != nil {
+		return m.fileDiffs, nil
+	}
+	// Default: cover lines 1-10 on a.txt.
 	diffLines := make(map[int]bool, 10)
 	for i := 1; i <= 10; i++ {
 		diffLines[i] = true
@@ -77,7 +97,7 @@ func (m *mockGitHubClient) GetPRFileDiffs(ctx context.Context, owner, repo strin
 }
 
 func (m *mockGitHubClient) CreateReview(ctx context.Context, owner, repo string, prNumber int, body string, comments []githubclient.ReviewComment, event string) error {
-	m.createReviewCalls = append(m.createReviewCalls, createReviewCall{comments: comments})
+	m.createReviewCalls = append(m.createReviewCalls, createReviewCall{body: body, comments: comments, event: event})
 	if m.createReviewFailAt > 0 && len(m.createReviewCalls) >= m.createReviewFailAt {
 		return errors.New("position could not be resolved")
 	}
@@ -85,6 +105,7 @@ func (m *mockGitHubClient) CreateReview(ctx context.Context, owner, repo string,
 }
 
 func (m *mockGitHubClient) PostStickyComment(ctx context.Context, owner, repo string, prNumber int, marker, body string) error {
+	m.postStickyBodies = append(m.postStickyBodies, body)
 	return m.postStickyCommentErr
 }
 
@@ -93,140 +114,82 @@ func (m *mockGitHubClient) PostComment(ctx context.Context, owner, repo string, 
 	return nil
 }
 
-func (m *mockGitHubClient) RemoveStaleAcigComments(ctx context.Context, owner, repo string, prNumber int, marker string) {}
+func (m *mockGitHubClient) RemoveStaleAcigComments(ctx context.Context, owner, repo string, prNumber int, marker string) {
+}
 
 func (m *mockGitHubClient) CreateCheckRun(ctx context.Context, owner, repo, name, conclusion, title, summary, headSHA string) error {
 	return nil
 }
 
 func TestReport_RetryWithoutCommentsOnPositionError(t *testing.T) {
-	mock := &mockGitHubClient{
-		createReviewFailAt: 1,
-	}
-
-	reporter := &GitHubReporter{
-		client: mock,
-	}
+	mock := &mockGitHubClient{createReviewFailAt: 1}
+	reporter := &GitHubReporter{client: mock}
 
 	v := &verdict.Verdict{
 		Decision: verdict.DecisionPass,
 		Risk:     verdict.RiskLow,
-		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "Issue A"},
-		},
+		Findings: []verdict.Finding{{File: "a.txt", LineStart: 10, Title: "Issue A"}},
 	}
 
 	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
 	require.NoError(t, err)
-
 	require.Len(t, mock.createReviewCalls, 2)
 	require.NotNil(t, mock.createReviewCalls[0].comments)
 	require.Nil(t, mock.createReviewCalls[1].comments)
 }
 
-func TestReport_FallsBackToStickyCommentWhenBothReviewAttemptsFail(t *testing.T) {
-	mock := &mockGitHubClient{
-		createReviewFailAt: 1,
-		postStickyCommentErr: errors.New("sticky comment failed"),
-	}
-
-	reporter := &GitHubReporter{
-		client: mock,
-	}
-
-	v := &verdict.Verdict{
-		Decision: verdict.DecisionPass,
-		Risk:     verdict.RiskLow,
-		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "Issue A"},
-		},
-	}
-
-	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
-	require.Error(t, err)
-	require.Len(t, mock.createReviewCalls, 2)
-	require.Contains(t, mock.postStickyCommentErr.Error(), "sticky comment failed")
-}
-
-func TestReport_SuccessfulReviewOnFirstTry(t *testing.T) {
-	mock := &mockGitHubClient{
-		createReviewFailAt: 0,
-	}
-
-	reporter := &GitHubReporter{
-		client: mock,
-	}
-
-	v := &verdict.Verdict{
-		Decision: verdict.DecisionPass,
-		Risk:     verdict.RiskLow,
-		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "Issue A"},
-		},
-	}
-
-	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
-	require.NoError(t, err)
-
-	require.Len(t, mock.createReviewCalls, 1)
-	require.NotNil(t, mock.createReviewCalls[0].comments)
-}
-
-func TestReport_UsesPRFilesFilter(t *testing.T) {
-	mock := &mockGitHubClient{}
-
-	reporter := &GitHubReporter{
-		client: mock,
-	}
-
-	v := &verdict.Verdict{
-		Decision: verdict.DecisionPass,
-		Risk:     verdict.RiskLow,
-		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "Issue A"},
-			{File: "deleted.txt", LineStart: 20, Title: "Should be filtered"},
-		},
-	}
-
-	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
-	require.NoError(t, err)
-
-	require.Len(t, mock.createReviewCalls, 1)
-	require.Len(t, mock.createReviewCalls[0].comments, 1)
-	require.Equal(t, "a.txt", mock.createReviewCalls[0].comments[0].Path)
-}
-
-// TestReport_TrulyGeneralFindingsPostedAsSeparateComments verifies that
-// findings with NO file (File="") are posted as individual PR comments.
-func TestReport_TrulyGeneralFindingsPostedAsSeparateComments(t *testing.T) {
+func TestReport_StickyCommentAlwaysPosted(t *testing.T) {
 	mock := &mockGitHubClient{}
 	reporter := &GitHubReporter{client: mock}
 
 	v := &verdict.Verdict{
 		Decision: verdict.DecisionPass,
 		Risk:     verdict.RiskLow,
+		Findings: []verdict.Finding{{File: "a.txt", LineStart: 10, Title: "Issue A"}},
+	}
+
+	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
+	require.NoError(t, err)
+
+	require.Len(t, mock.postStickyBodies, 1)
+	require.Contains(t, mock.postStickyBodies[0], "Issue A")
+	require.Contains(t, mock.postStickyBodies[0], acigMarker)
+	// Per-finding "general" comments are no longer posted.
+	require.Empty(t, mock.postedComments)
+}
+
+func TestReport_DroppedFindingsAppearInSticky(t *testing.T) {
+	mock := &mockGitHubClient{}
+	reporter := &GitHubReporter{client: mock}
+
+	v := &verdict.Verdict{
+		Decision: verdict.DecisionWarn,
+		Risk:     verdict.RiskMedium,
 		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "Inline Issue"},
-			{File: "", LineStart: 0, Title: "Truly General Issue", Detail: "No file at all"},
+			{File: "a.txt", LineStart: 10, Title: "Inline OK"},
+			{File: "", LineStart: 0, Title: "No file finding"},
+			{File: "missing.go", LineStart: 5, Title: "Outside PR"},
+			{File: "a.txt", LineStart: 99, Title: "Outside diff"},
 		},
 	}
 
 	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
 	require.NoError(t, err)
 
-	// Inline finding goes into the review.
+	// Only the inline-anchored finding becomes a review comment.
 	require.Len(t, mock.createReviewCalls[0].comments, 1)
-	require.Equal(t, "a.txt", mock.createReviewCalls[0].comments[0].Path)
+	require.Equal(t, 10, mock.createReviewCalls[0].comments[0].Line)
 
-	// Only File="" findings become separate comments.
-	require.Len(t, mock.postedComments, 1)
-	require.Contains(t, mock.postedComments[0], "Truly General Issue")
+	// All findings appear in the sticky body (table); the dropped ones also
+	// appear under the "Findings outside the diff" details section.
+	body := mock.postStickyBodies[0]
+	require.Contains(t, body, "Inline OK")
+	require.Contains(t, body, "No file finding")
+	require.Contains(t, body, "Outside PR")
+	require.Contains(t, body, "Outside diff")
+	require.Contains(t, body, "Findings outside the diff")
 }
 
-// TestReport_FileLevelFindingSnappedToFirstDiffLine verifies the core fix:
-// a finding that references a file but has LineStart=0 (e.g. a missing-test
-// finding from test_coverage_smell) is snapped to the first visible diff line
-// and posted as an inline review comment, NOT as a conversation comment.
 func TestReport_FileLevelFindingSnappedToFirstDiffLine(t *testing.T) {
 	mock := &mockGitHubClient{}
 	reporter := &GitHubReporter{client: mock}
@@ -235,7 +198,6 @@ func TestReport_FileLevelFindingSnappedToFirstDiffLine(t *testing.T) {
 		Decision: verdict.DecisionPass,
 		Risk:     verdict.RiskLow,
 		Findings: []verdict.Finding{
-			// File-level finding: LineStart=0, file is in the PR diff.
 			{File: "a.txt", LineStart: 0, Title: "Missing Test", Detail: "No unit test"},
 		},
 	}
@@ -243,81 +205,75 @@ func TestReport_FileLevelFindingSnappedToFirstDiffLine(t *testing.T) {
 	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
 	require.NoError(t, err)
 
-	// Must appear as an inline review comment, NOT a conversation comment.
 	require.Len(t, mock.createReviewCalls[0].comments, 1)
 	c := mock.createReviewCalls[0].comments[0]
 	require.Equal(t, "a.txt", c.Path)
-	require.Equal(t, 1, c.Line) // snapped to first DiffLine (1)
-	require.Contains(t, c.Body, "Missing Test")
-
-	// No separate conversation comments.
-	require.Empty(t, mock.postedComments)
+	require.Equal(t, 1, c.Line)
+	require.Equal(t, "RIGHT", c.Side)
 }
 
-// TestReport_MissingFileFindingsPostedAsSeparateComments verifies that
-// findings referencing files not in the PR are posted as individual PR
-// comments rather than silently dropped.
-func TestReport_MissingFileFindingsPostedAsSeparateComments(t *testing.T) {
-	mock := &mockGitHubClient{}
+func TestReport_DeletedFileFindingGoesToLeftSide(t *testing.T) {
+	mock := &mockGitHubClient{
+		prFiles: []string{"deleted.md"},
+		fileDiffs: map[string]*diff.FileDiff{
+			"deleted.md": {
+				Path:     "deleted.md",
+				IsDelete: true,
+				OrigLines: map[int]bool{
+					1: true, 2: true, 3: true, 4: true, 5: true,
+				},
+			},
+		},
+	}
 	reporter := &GitHubReporter{client: mock}
 
 	v := &verdict.Verdict{
 		Decision: verdict.DecisionPass,
 		Risk:     verdict.RiskLow,
 		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "Inline Issue"},
-			{File: "missing.go", LineStart: 5, Title: "Missing File Issue", Detail: "Tests absent"},
+			{File: "deleted.md", LineStart: 3, Title: "Comment on deleted code"},
 		},
 	}
 
 	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
 	require.NoError(t, err)
 
-	// Only the in-PR file gets an inline comment.
 	require.Len(t, mock.createReviewCalls[0].comments, 1)
-	require.Equal(t, "a.txt", mock.createReviewCalls[0].comments[0].Path)
-
-	// The missing-file finding is posted as a separate comment.
-	require.Len(t, mock.postedComments, 1)
-	require.Contains(t, mock.postedComments[0], "missing.go")
-	require.Contains(t, mock.postedComments[0], "Missing File Issue")
+	c := mock.createReviewCalls[0].comments[0]
+	require.Equal(t, "deleted.md", c.Path)
+	require.Equal(t, "LEFT", c.Side)
+	require.Equal(t, 3, c.Line)
 }
 
-// TestReport_OutOfDiffLineFindingsPostedAsSeparateComments verifies that
-// findings whose line number is not visible in the diff are posted as
-// separate PR comments rather than being silently dropped or mapped to the
-// wrong diff line.
-func TestReport_OutOfDiffLineFindingsPostedAsSeparateComments(t *testing.T) {
-	mock := &mockGitHubClient{}
+func TestReport_NearLineSnapping(t *testing.T) {
+	// Diff covers lines 10-15; finding on line 12 should map exactly,
+	// finding on line 17 should snap to 15 (within ±3).
+	dl := map[int]bool{10: true, 11: true, 12: true, 13: true, 14: true, 15: true}
+	mock := &mockGitHubClient{
+		prFiles: []string{"a.txt"},
+		fileDiffs: map[string]*diff.FileDiff{
+			"a.txt": {Path: "a.txt", DiffLines: dl},
+		},
+	}
 	reporter := &GitHubReporter{client: mock}
 
 	v := &verdict.Verdict{
 		Decision: verdict.DecisionPass,
 		Risk:     verdict.RiskLow,
 		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "In-diff Issue"},
-			// Line 99 is outside the mocked diff which only covers lines 1-10.
-			{File: "a.txt", LineStart: 99, Title: "Out-of-diff Issue", Detail: "Not in hunk"},
+			{File: "a.txt", LineStart: 17, Title: "Slightly off"},
 		},
 	}
 
 	err := reporter.Report(context.Background(), v, "owner", "repo", 1)
 	require.NoError(t, err)
 
-	// Only the in-diff finding gets an inline comment.
 	require.Len(t, mock.createReviewCalls[0].comments, 1)
-	require.Equal(t, 10, mock.createReviewCalls[0].comments[0].Line)
-
-	// The out-of-diff finding is posted as a separate comment.
-	require.Len(t, mock.postedComments, 1)
-	require.Contains(t, mock.postedComments[0], "Out-of-diff Issue")
-	require.Contains(t, mock.postedComments[0], "outside diff")
+	c := mock.createReviewCalls[0].comments[0]
+	require.Equal(t, 15, c.Line, "should snap to nearest diff line within ±3")
 }
 
-// TestCleanupOldReviews_DeletesCommentsForAllStates verifies that cleanup
-// deletes inline comments for COMMENT-state reviews (not just
-// CHANGES_REQUESTED/APPROVED) and also dismisses/disposes reviews correctly.
-func TestCleanupOldReviews_DeletesCommentsForAllStates(t *testing.T) {
+func TestCleanupOldReviews_HandlesAllStates(t *testing.T) {
 	commentedReviewBody := "<!-- acig:review -->\n## acig: pass"
 	approvedReviewBody := "<!-- acig:review -->\n## acig: block"
 	pendingReviewBody := "<!-- acig:review -->\n## acig: pending"
@@ -328,54 +284,37 @@ func TestCleanupOldReviews_DeletesCommentsForAllStates(t *testing.T) {
 		wantDeleted    []int64
 		wantDismissed  []int64
 		wantPendingDel []int64
+		wantEdited     []int64
 	}{
 		{
-			name: "COMMENT review has comments deleted but is not dismissed",
+			name: "COMMENTED review has comments deleted and body replaced",
 			reviews: []*github.PullRequestReview{
-				{
-					ID:    github.Int64(101),
-					Body:  &commentedReviewBody,
-					State: github.String("COMMENTED"),
-				},
+				{ID: github.Int64(101), Body: &commentedReviewBody, State: github.String("COMMENTED")},
 			},
-			wantDeleted:   []int64{101},
-			wantDismissed: nil,
+			wantDeleted: []int64{101},
+			wantEdited:  []int64{101},
 		},
 		{
-			name: "APPROVED review has comments deleted and is dismissed",
+			name: "APPROVED review is dismissed",
 			reviews: []*github.PullRequestReview{
-				{
-					ID:    github.Int64(202),
-					Body:  &approvedReviewBody,
-					State: github.String("APPROVED"),
-				},
+				{ID: github.Int64(202), Body: &approvedReviewBody, State: github.String("APPROVED")},
 			},
 			wantDeleted:   []int64{202},
 			wantDismissed: []int64{202},
 		},
 		{
-			name: "PENDING review is deleted entirely",
+			name: "PENDING review is deleted",
 			reviews: []*github.PullRequestReview{
-				{
-					ID:    github.Int64(303),
-					Body:  &pendingReviewBody,
-					State: github.String("PENDING"),
-				},
+				{ID: github.Int64(303), Body: &pendingReviewBody, State: github.String("PENDING")},
 			},
 			wantDeleted:    []int64{303},
 			wantPendingDel: []int64{303},
 		},
 		{
-			name: "non-acig reviews are left untouched",
+			name: "non-acig review is left alone",
 			reviews: []*github.PullRequestReview{
-				{
-					ID:    github.Int64(999),
-					Body:  github.String("some other review"),
-					State: github.String("COMMENTED"),
-				},
+				{ID: github.Int64(999), Body: github.String("some other review"), State: github.String("COMMENTED")},
 			},
-			wantDeleted:   nil,
-			wantDismissed: nil,
 		},
 	}
 
@@ -388,6 +327,10 @@ func TestCleanupOldReviews_DeletesCommentsForAllStates(t *testing.T) {
 			require.Equal(t, tt.wantDeleted, mock.deletedReviewIDs)
 			require.Equal(t, tt.wantDismissed, mock.dismissedReviewIDs)
 			require.Equal(t, tt.wantPendingDel, mock.deletedPendingReviewIDs)
+			require.Equal(t, tt.wantEdited, mock.editedReviewIDs)
+			if len(tt.wantEdited) > 0 {
+				require.Contains(t, mock.editedReviewBodies[0], "Superseded")
+			}
 		})
 	}
 }

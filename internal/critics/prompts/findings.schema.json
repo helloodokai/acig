@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "title", "detail"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["info", "low", "medium", "high", "blocking"]
+          },
+          "title": { "type": "string", "maxLength": 120 },
+          "detail": { "type": "string", "maxLength": 1000 },
+          "file": { "type": "string" },
+          "line_start": { "type": "integer", "minimum": 0 },
+          "line_end": { "type": "integer", "minimum": 0 },
+          "suggested_fix": { "type": "string", "maxLength": 1000 }
+        }
+      }
+    }
+  }
+}

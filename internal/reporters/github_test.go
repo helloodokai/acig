@@ -3,141 +3,20 @@ package reporters
 import (
 	"testing"
 
+	"github.com/helloodokai/acig/internal/diff"
 	"github.com/helloodokai/acig/internal/verdict"
 	"github.com/stretchr/testify/require"
 )
 
-func TestGroupFindings(t *testing.T) {
-	findings := []verdict.Finding{
-		{File: "a.txt", LineStart: 10, LineEnd: 10, Title: "Issue A"},
-		{File: "a.txt", LineStart: 10, LineEnd: 10, Title: "Issue A2"},
-		{File: "b.txt", LineStart: 20, LineEnd: 20, Title: "Issue B"},
-		{File: "a.txt", LineStart: 30, LineEnd: 30, Title: "Issue A3"},
+func diffWithLines(path string, lines ...int) *diff.FileDiff {
+	dl := make(map[int]bool, len(lines))
+	for _, l := range lines {
+		dl[l] = true
 	}
-
-	groups := groupFindings(findings)
-	require.Len(t, groups, 3)
-
-	require.Len(t, groups[0], 2)
-	require.Equal(t, "a.txt", groups[0][0].File)
-	require.Equal(t, 10, groups[0][0].LineStart)
-
-	require.Len(t, groups[1], 1)
-	require.Equal(t, "b.txt", groups[1][0].File)
-
-	require.Len(t, groups[2], 1)
-	require.Equal(t, 30, groups[2][0].LineStart)
+	return &diff.FileDiff{Path: path, DiffLines: dl}
 }
 
-func TestGroupFindings_EmptyFile(t *testing.T) {
-	findings := []verdict.Finding{
-		{File: "", LineStart: 10, Title: "No file"},
-		{File: "a.txt", LineStart: 20, Title: "Has file"},
-	}
-
-	groups := groupFindings(findings)
-	require.Len(t, groups, 1)
-	require.Equal(t, "a.txt", groups[0][0].File)
-}
-
-func TestGroupFindings_ZeroLineStart(t *testing.T) {
-	// LineStart=0 findings with a file are now included in groupFindings so
-	// that buildReviewComments can snap them to the first diff line and post
-	// them as inline review comments instead of general conversation comments.
-	findings := []verdict.Finding{
-		{File: "a.txt", LineStart: 0, Title: "Zero line"},
-		{File: "b.txt", LineStart: 10, Title: "Valid line"},
-	}
-
-	groups := groupFindings(findings)
-	require.Len(t, groups, 2)
-	require.Equal(t, "a.txt", groups[0][0].File)
-	require.Equal(t, "b.txt", groups[1][0].File)
-}
-
-func TestGroupFindings_EmptyFileExcluded(t *testing.T) {
-	// Findings with no file at all are excluded — they go to general comments.
-	findings := []verdict.Finding{
-		{File: "", LineStart: 0, Title: "Truly general"},
-		{File: "a.txt", LineStart: 0, Title: "File-level"},
-	}
-
-	groups := groupFindings(findings)
-	require.Len(t, groups, 1)
-	require.Equal(t, "a.txt", groups[0][0].File)
-}
-
-func TestBuildReviewComments_FiltersNonPRFiles(t *testing.T) {
-	v := &verdict.Verdict{
-		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "Issue A"},
-			{File: "deleted.txt", LineStart: 20, Title: "Issue in deleted file"},
-			{File: "b.txt", LineStart: 30, Title: "Issue B"},
-		},
-	}
-
-	prFiles := []string{"a.txt", "b.txt", "c.txt"}
-	comments := buildReviewComments(v, prFiles, nil)
-
-	require.Len(t, comments, 2)
-	require.Equal(t, "a.txt", comments[0].Path)
-	require.Equal(t, "b.txt", comments[1].Path)
-}
-
-func TestBuildReviewComments_AllFilesIfPRFilesNil(t *testing.T) {
-	v := &verdict.Verdict{
-		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "Issue A"},
-			{File: "deleted.txt", LineStart: 20, Title: "Issue in deleted file"},
-		},
-	}
-
-	comments := buildReviewComments(v, nil, nil)
-
-	require.Len(t, comments, 2)
-}
-
-func TestBuildReviewComments_EmptyPRFiles(t *testing.T) {
-	v := &verdict.Verdict{
-		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, Title: "Issue A"},
-		},
-	}
-
-	comments := buildReviewComments(v, []string{}, nil)
-
-	require.Len(t, comments, 1)
-}
-
-func TestBuildReviewComments_MultiLineComment(t *testing.T) {
-	v := &verdict.Verdict{
-		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, LineEnd: 20, Title: "Multi-line issue"},
-		},
-	}
-
-	comments := buildReviewComments(v, []string{"a.txt"}, nil)
-
-	require.Len(t, comments, 1)
-	require.Equal(t, 20, comments[0].Line)
-	require.Equal(t, 10, comments[0].StartLine)
-}
-
-func TestBuildReviewComments_SingleLineComment(t *testing.T) {
-	v := &verdict.Verdict{
-		Findings: []verdict.Finding{
-			{File: "a.txt", LineStart: 10, LineEnd: 10, Title: "Single line issue"},
-		},
-	}
-
-	comments := buildReviewComments(v, []string{"a.txt"}, nil)
-
-	require.Len(t, comments, 1)
-	require.Equal(t, 10, comments[0].Line)
-	require.Equal(t, 0, comments[0].StartLine)
-}
-
-func TestBuildReviewComments_GroupsFindingsByFileAndLine(t *testing.T) {
+func TestBuildReviewComments_GroupsByFileAndLine(t *testing.T) {
 	v := &verdict.Verdict{
 		Findings: []verdict.Finding{
 			{File: "a.txt", LineStart: 10, Title: "Issue 1"},
@@ -146,10 +25,104 @@ func TestBuildReviewComments_GroupsFindingsByFileAndLine(t *testing.T) {
 			{File: "b.txt", LineStart: 20, Title: "Issue 4"},
 		},
 	}
+	fileDiffs := map[string]*diff.FileDiff{
+		"a.txt": diffWithLines("a.txt", 10, 30),
+		"b.txt": diffWithLines("b.txt", 20),
+	}
+	comments, dropped := buildReviewComments(v, []string{"a.txt", "b.txt"}, fileDiffs)
 
-	comments := buildReviewComments(v, []string{"a.txt", "b.txt"}, nil)
-
+	require.Empty(t, dropped)
 	require.Len(t, comments, 3)
 	require.Contains(t, comments[0].Body, "Issue 1")
 	require.Contains(t, comments[0].Body, "Issue 2")
+}
+
+func TestBuildReviewComments_FiltersFilesNotInPR(t *testing.T) {
+	v := &verdict.Verdict{
+		Findings: []verdict.Finding{
+			{File: "a.txt", LineStart: 10, Title: "Inline"},
+			{File: "missing.go", LineStart: 5, Title: "Outside PR"},
+		},
+	}
+	fileDiffs := map[string]*diff.FileDiff{"a.txt": diffWithLines("a.txt", 10)}
+
+	comments, dropped := buildReviewComments(v, []string{"a.txt"}, fileDiffs)
+	require.Len(t, comments, 1)
+	require.Equal(t, "a.txt", comments[0].Path)
+	require.Len(t, dropped, 1)
+	require.Equal(t, "missing.go", dropped[0].File)
+}
+
+func TestBuildReviewComments_FindingWithoutFileIsDropped(t *testing.T) {
+	v := &verdict.Verdict{
+		Findings: []verdict.Finding{
+			{File: "", LineStart: 0, Title: "Truly general"},
+			{File: "a.txt", LineStart: 10, Title: "Inline"},
+		},
+	}
+	fileDiffs := map[string]*diff.FileDiff{"a.txt": diffWithLines("a.txt", 10)}
+
+	comments, dropped := buildReviewComments(v, []string{"a.txt"}, fileDiffs)
+	require.Len(t, comments, 1)
+	require.Len(t, dropped, 1)
+	require.Equal(t, "Truly general", dropped[0].Title)
+}
+
+func TestBuildReviewComments_MultiLineComment(t *testing.T) {
+	v := &verdict.Verdict{
+		Findings: []verdict.Finding{
+			{File: "a.txt", LineStart: 10, LineEnd: 12, Title: "Multi-line"},
+		},
+	}
+	fileDiffs := map[string]*diff.FileDiff{
+		"a.txt": diffWithLines("a.txt", 10, 11, 12),
+	}
+	comments, _ := buildReviewComments(v, []string{"a.txt"}, fileDiffs)
+
+	require.Len(t, comments, 1)
+	require.Equal(t, 12, comments[0].Line)
+	require.Equal(t, 10, comments[0].StartLine)
+}
+
+func TestBuildReviewComments_LegacyAddedFallback(t *testing.T) {
+	// FileDiffs with Added but no DiffLines (used by some legacy callers).
+	v := &verdict.Verdict{
+		Findings: []verdict.Finding{
+			{File: "a.txt", LineStart: 5, Title: "Issue"},
+		},
+	}
+	fileDiffs := map[string]*diff.FileDiff{
+		"a.txt": {Path: "a.txt", Added: []string{"a", "b", "c", "d", "e", "f"}},
+	}
+	comments, _ := buildReviewComments(v, []string{"a.txt"}, fileDiffs)
+	require.Len(t, comments, 1)
+	require.Equal(t, 5, comments[0].Line)
+}
+
+func TestSnap_WithinWindow(t *testing.T) {
+	set := map[int]bool{10: true, 11: true, 12: true}
+	cases := []struct {
+		req  int
+		want int
+		ok   bool
+	}{
+		{10, 10, true},
+		{11, 11, true},
+		{13, 12, true}, // snap down
+		{9, 10, true},  // snap up
+		{15, 12, true}, // 15→12 is within ±3
+		{20, 0, false}, // outside window
+	}
+	for _, c := range cases {
+		got, ok := snap(set, c.req)
+		require.Equal(t, c.ok, ok, "snap(%d).ok", c.req)
+		require.Equal(t, c.want, got, "snap(%d)", c.req)
+	}
+}
+
+func TestIsSingleLineSuggestion(t *testing.T) {
+	require.True(t, isSingleLineSuggestion("foo := 42"))
+	require.False(t, isSingleLineSuggestion("line1\nline2"))
+	require.False(t, isSingleLineSuggestion("```code```"))
+	require.False(t, isSingleLineSuggestion(""))
 }

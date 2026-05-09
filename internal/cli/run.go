@@ -174,7 +174,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(ui.Output(), "")
 	}
 
-	slog.Info("verdict", "decision", v.Decision, "risk", v.Risk, "findings", len(v.Findings), "cost_usd", fmt.Sprintf("%.4f", v.TotalCostUSD))
+	notesCount := 0
+	for _, cr := range v.CriticResults {
+		notesCount += len(cr.Notes)
+	}
+
+	slog.Info("verdict", "decision", v.Decision, "risk", v.Risk, "findings", len(v.Findings), "validation_notes", notesCount, "cost_usd", fmt.Sprintf("%.4f", v.TotalCostUSD))
 
 	if showUI {
 		ui.PrintVerdict(ui.VerdictSummary{
@@ -185,6 +190,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 			DurationMS:   v.TotalDurationMS,
 			Suppressions: len(suppressions),
 		})
+
+		if notesCount > 0 {
+			ui.PrintStep("", fmt.Sprintf("%d validation note(s) — see verdict JSON for details", notesCount))
+		}
 
 		findings := make([]ui.FindingDisplay, len(v.Findings))
 		for i, f := range v.Findings {
@@ -254,8 +263,6 @@ func detectBaseSHA() string {
 	return "unknown"
 }
 
-
-
 const lastVerdictFile = "/tmp/acig-last-verdict.json"
 
 func writeOutput(v *verdict.Verdict) {
@@ -323,7 +330,22 @@ func reportToGitHub(ctx context.Context, cfg *config.Config, v *verdict.Verdict,
 	token := os.Getenv("GITHUB_TOKEN")
 	client := githubclient.NewClient(token)
 	reporter := reporters.NewGitHubReporter(client, sha)
+	if runURL := actionRunURL(); runURL != "" {
+		reporter.SetRunURL(runURL)
+	}
 	return reporter.Report(ctx, v, owner, name, prNumber)
+}
+
+// actionRunURL builds the GitHub Actions run URL from environment variables
+// set by the runner. Returns empty when not running inside Actions.
+func actionRunURL() string {
+	server := os.Getenv("GITHUB_SERVER_URL")
+	repo := os.Getenv("GITHUB_REPOSITORY")
+	runID := os.Getenv("GITHUB_RUN_ID")
+	if server == "" || repo == "" || runID == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s/actions/runs/%s", server, repo, runID)
 }
 
 func detectPRNumber() (int, error) {
@@ -338,7 +360,7 @@ func detectPRNumber() (int, error) {
 	}
 
 	var event struct {
-		Number int `json:"number"`
+		Number      int `json:"number"`
 		PullRequest struct {
 			Number int `json:"number"`
 		} `json:"pull_request"`

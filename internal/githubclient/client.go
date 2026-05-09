@@ -22,30 +22,52 @@ func NewClient(token string) *Client {
 }
 
 func (c *Client) PostStickyComment(ctx context.Context, owner, repo string, prNumber int, marker, body string) error {
-	comments, _, err := c.client.Issues.ListComments(ctx, owner, repo, prNumber, &github.IssueListCommentsOptions{
+	opts := &github.IssueListCommentsOptions{
 		ListOptions: github.ListOptions{PerPage: 100},
-	})
-	if err != nil {
-		return fmt.Errorf("listing comments: %w", err)
+	}
+	var firstMatch *github.IssueComment
+	var duplicates []*github.IssueComment
+	for {
+		comments, resp, err := c.client.Issues.ListComments(ctx, owner, repo, prNumber, opts)
+		if err != nil {
+			return fmt.Errorf("listing comments: %w", err)
+		}
+		for _, comment := range comments {
+			if comment.Body == nil || !strings.Contains(*comment.Body, marker) {
+				continue
+			}
+			if firstMatch == nil {
+				firstMatch = comment
+			} else {
+				duplicates = append(duplicates, comment)
+			}
+		}
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
 	}
 
-	for _, comment := range comments {
-		if comment.Body != nil && strings.Contains(*comment.Body, marker) {
-			_, _, err = c.client.Issues.EditComment(ctx, owner, repo, *comment.ID, &github.IssueComment{
-				Body: github.String(body),
-			})
-			if err != nil {
-				return fmt.Errorf("updating sticky comment: %w", err)
-			}
-			slog.Info("updated existing sticky comment", "pr", prNumber)
-			return nil
+	// Tidy up duplicates created by older buggy runs.
+	for _, dup := range duplicates {
+		if _, err := c.client.Issues.DeleteComment(ctx, owner, repo, dup.GetID()); err != nil {
+			slog.Warn("failed to delete duplicate sticky comment", "id", dup.GetID(), "error", err)
 		}
 	}
 
-	_, _, err = c.client.Issues.CreateComment(ctx, owner, repo, prNumber, &github.IssueComment{
+	if firstMatch != nil {
+		if _, _, err := c.client.Issues.EditComment(ctx, owner, repo, firstMatch.GetID(), &github.IssueComment{
+			Body: github.String(body),
+		}); err != nil {
+			return fmt.Errorf("updating sticky comment: %w", err)
+		}
+		slog.Info("updated existing sticky comment", "pr", prNumber)
+		return nil
+	}
+
+	if _, _, err := c.client.Issues.CreateComment(ctx, owner, repo, prNumber, &github.IssueComment{
 		Body: github.String(body),
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("creating comment: %w", err)
 	}
 	slog.Info("created new sticky comment", "pr", prNumber)
@@ -79,4 +101,3 @@ func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, name, conclusi
 	}
 	return nil
 }
-

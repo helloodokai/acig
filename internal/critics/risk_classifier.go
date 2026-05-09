@@ -3,7 +3,6 @@ package critics
 import (
 	"context"
 	_ "embed"
-	"text/template"
 
 	"github.com/helloodokai/acig/internal/diff"
 	"github.com/helloodokai/acig/internal/verdict"
@@ -12,19 +11,16 @@ import (
 //go:embed prompts/risk_classifier.md
 var riskClassifierPrompt string
 
+//go:embed prompts/risk_classifier.schema.json
+var riskClassifierSchema []byte
+
 type RiskClassifier struct {
 	baseCritic
-	tmpl *template.Template
 }
 
 func init() {
-	tmpl, err := template.New("risk_classifier").Parse(riskClassifierPrompt)
-	if err != nil {
-		panic("risk_classifier prompt: " + err.Error())
-	}
 	Register(&RiskClassifier{
 		baseCritic: baseCritic{id: "risk_classifier", tier: TierCheap, promptTmpl: riskClassifierPrompt},
-		tmpl:       tmpl,
 	})
 }
 
@@ -37,5 +33,5 @@ func (rc *RiskClassifier) Run(ctx context.Context, d *diff.Diff, pc *Context) (*
 	data := diffToPromptData(d, pc)
 	return runCritic(ctx, rc.id, rc.tier, riskClassifierPrompt, data, client, modelName, func(tokensIn, tokensOut int) float64 {
 		return pc.Budget.Record("ollama_cloud", modelName, tokensIn, tokensOut)
-	})
+	}, d, riskClassifierSchema)
 }

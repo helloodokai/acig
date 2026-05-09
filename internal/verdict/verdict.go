@@ -41,14 +41,21 @@ type Finding struct {
 }
 
 type CriticResult struct {
-	Critic     string        `json:"critic"`
-	Model      string        `json:"model"`
-	Findings   []Finding     `json:"findings"`
-	CostUSD    float64       `json:"cost_usd"`
-	DurationMS int64         `json:"duration_ms"`
-	TokensIn   int           `json:"tokens_in"`
-	TokensOut  int           `json:"tokens_out"`
-	Error      string        `json:"error,omitempty"`
+	Critic     string    `json:"critic"`
+	Model      string    `json:"model"`
+	Findings   []Finding `json:"findings"`
+	CostUSD    float64   `json:"cost_usd"`
+	DurationMS int64     `json:"duration_ms"`
+	TokensIn   int       `json:"tokens_in"`
+	TokensOut  int       `json:"tokens_out"`
+	Error      string    `json:"error,omitempty"`
+	// Notes carries observability info from the post-parse validator.
+	// Examples: "dropped 2 findings outside diff", "downgraded 1 blocking from cheap tier".
+	Notes []string `json:"notes,omitempty"`
+	// Reasoning is populated by the risk_classifier critic to explain the chosen risk band.
+	Reasoning string `json:"reasoning,omitempty"`
+	// Risk is populated by the risk_classifier critic.
+	Risk Risk `json:"risk,omitempty"`
 }
 
 type Verdict struct {
