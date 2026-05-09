@@ -115,7 +115,12 @@ func (p *Pipeline) Execute(ctx context.Context, repo, sha, baseSHA string) (*ver
 
 	risk := verdict.RiskLow
 	if riskResult != nil {
-		risk = classifyRisk(riskResult)
+		// Prefer the explicit risk band the new risk_classifier emits.
+		if riskResult.Risk != "" {
+			risk = riskResult.Risk
+		} else {
+			risk = classifyRisk(riskResult)
+		}
 	}
 	pc.Risk = risk
 	if pc.Result.Risk == "" {

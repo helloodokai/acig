@@ -44,17 +44,35 @@ func (c *OllamaClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 func (c *OllamaClient) chatNative(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	url := c.host + "/api/chat"
 
+	options := map[string]any{
+		"temperature": req.Temperature,
+		"num_predict": req.MaxTokens,
+	}
+	if req.TopP > 0 {
+		options["top_p"] = req.TopP
+	}
+	if len(req.Stop) > 0 {
+		options["stop"] = req.Stop
+	}
+
 	body := map[string]any{
 		"model":    req.Model,
 		"messages": req.Messages,
 		"stream":   false,
-		"options": map[string]any{
-			"temperature": req.Temperature,
-			"num_predict": req.MaxTokens,
-		},
+		"options":  options,
 	}
 
-	if req.JSONMode {
+	// JSONSchema (if provided) takes precedence over plain JSONMode: Ollama
+	// accepts a JSON Schema object directly in `format` to constrain output.
+	if len(req.JSONSchema) > 0 {
+		var schema any
+		if err := json.Unmarshal(req.JSONSchema, &schema); err == nil {
+			body["format"] = schema
+		} else {
+			// Fall back to plain JSON mode if the schema is malformed.
+			body["format"] = "json"
+		}
+	} else if req.JSONMode {
 		body["format"] = "json"
 	}
 
@@ -89,8 +107,8 @@ func (c *OllamaClient) chatNative(ctx context.Context, req ChatRequest) (*ChatRe
 	}
 
 	var result struct {
-		Model     string `json:"model"`
-		Message   struct {
+		Model   string `json:"model"`
+		Message struct {
 			Content string `json:"content"`
 		} `json:"message"`
 		Done        bool `json:"done"`
@@ -113,7 +131,7 @@ func (c *OllamaClient) chatNative(ctx context.Context, req ChatRequest) (*ChatRe
 	return &ChatResponse{
 		Content:   result.Message.Content,
 		TokensIn:  tokensIn,
-		TokensOut:  tokensOut,
+		TokensOut: tokensOut,
 		Model:     result.Model,
 	}, nil
 }

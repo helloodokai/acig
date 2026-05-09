@@ -30,5 +30,5 @@ func (tc *TestCoverageSmell) Run(ctx context.Context, d *diff.Diff, pc *Context)
 	data := diffToPromptData(d, pc)
 	return runCritic(ctx, tc.id, tc.tier, testCoverageSmellPrompt, data, client, modelName, func(tokensIn, tokensOut int) float64 {
 		return pc.Budget.Record("ollama_cloud", modelName, tokensIn, tokensOut)
-	})
+	}, d, findingsSchema)
 }

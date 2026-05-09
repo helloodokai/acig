@@ -11,6 +11,9 @@ import (
 //go:embed prompts/security_smell.md
 var securitySmellPrompt string
 
+//go:embed prompts/findings.schema.json
+var findingsSchema []byte
+
 type SecuritySmell struct {
 	baseCritic
 }
@@ -30,5 +33,5 @@ func (sc *SecuritySmell) Run(ctx context.Context, d *diff.Diff, pc *Context) (*v
 	data := diffToPromptData(d, pc)
 	return runCritic(ctx, sc.id, sc.tier, securitySmellPrompt, data, client, modelName, func(tokensIn, tokensOut int) float64 {
 		return pc.Budget.Record("ollama_cloud", modelName, tokensIn, tokensOut)
-	})
+	}, d, findingsSchema)
 }
