@@ -424,9 +424,6 @@ func lookupFileDiff(diffs map[string]*diff.FileDiff, path string) *diff.FileDiff
 	return diffs[path]
 }
 
-// buildInlineCommentBody renders the markdown for a group of findings on the
-// same file:line. Includes a logo header, severity badge, suggestion block
-// (when SuggestedFix is single-line), and an ignore hint.
 func buildInlineCommentBody(findings []verdict.Finding) string {
 	var body strings.Builder
 	body.WriteString(acigMarker)
@@ -443,39 +440,11 @@ func buildInlineCommentBody(findings []verdict.Finding) string {
 			body.WriteString("\n")
 		}
 		if f.SuggestedFix != "" {
-			if isSingleLineSuggestion(f.SuggestedFix) {
-				body.WriteString("\n```suggestion\n")
-				body.WriteString(strings.TrimRight(f.SuggestedFix, "\n"))
-				body.WriteString("\n```\n")
-			} else {
-				body.WriteString("\n<details>\n<summary>Suggested fix</summary>\n\n")
-				body.WriteString(f.SuggestedFix)
-				body.WriteString("\n\n</details>\n")
-			}
+			body.WriteString(fmt.Sprintf("\n> **Suggested fix:** %s\n", f.SuggestedFix))
 		}
 		body.WriteString(fmt.Sprintf("\n_To suppress: add `# acig-ignore: %s` near this line._\n", f.Critic))
 	}
 	return body.String()
-}
-
-// isSingleLineSuggestion returns true when SuggestedFix is plausibly a
-// single-line replacement we can render as a GitHub `suggestion` block.
-// We require: no newlines, no fenced code, and modest length.
-func isSingleLineSuggestion(s string) bool {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return false
-	}
-	if strings.ContainsAny(s, "\n\r") {
-		return false
-	}
-	if strings.Contains(s, "```") {
-		return false
-	}
-	if len(s) > 200 {
-		return false
-	}
-	return true
 }
 
 func severityBadge(s verdict.Severity) string {

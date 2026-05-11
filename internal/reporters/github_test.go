@@ -119,10 +119,3 @@ func TestSnap_WithinWindow(t *testing.T) {
 		require.Equal(t, c.want, got, "snap(%d)", c.req)
 	}
 }
-
-func TestIsSingleLineSuggestion(t *testing.T) {
-	require.True(t, isSingleLineSuggestion("foo := 42"))
-	require.False(t, isSingleLineSuggestion("line1\nline2"))
-	require.False(t, isSingleLineSuggestion("```code```"))
-	require.False(t, isSingleLineSuggestion(""))
-}
